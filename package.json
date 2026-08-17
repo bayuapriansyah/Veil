@@ -1,0 +1,34 @@
+{
+  "name": "veil",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VEIL - Verifiable Economic Infrastructure Layer for Autonomous AI Agents",
+  "scripts": {
+    "build:contracts": "forge build",
+    "test:contracts": "forge test",
+    "worker": "tsx services/attestation/worker.ts",
+    "live-check": "tsx services/attestation/live-check.ts",
+    "deploy": "tsx script/deploy.ts",
+    "typecheck": "tsc --noEmit",
+    "compile-check": "node script/compile-check.js",
+    "demo:provider": "tsx services/provider/server.ts",
+    "demo": "tsx services/demo/sim.ts",
+    "demo:procurement": "tsx services/procurement/demo.ts",
+    "demo:audit": "tsx services/audit/demo.ts",
+    "test:audit": "tsx --test services/audit/audit.test.ts",
+    "test:procurement": "tsx --test services/procurement/procurement.test.ts",
+    "test": "tsx --test services/provider/x402.test.ts services/demo/flow.test.ts services/procurement/procurement.test.ts services/audit/audit.test.ts"
+  },
+  "dependencies": {
+    "@gluwa/usc-contracts": "0.1.2",
+    "@gluwa/usc-sdk": "0.18.0",
+    "@openzeppelin/contracts": "^5.4.0",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.2"
+  }
+}

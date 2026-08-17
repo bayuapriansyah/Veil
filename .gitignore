@@ -1,0 +1,15 @@
+node_modules/
+out/
+.next/
+dist/
+cache/
+broadcast/
+.env
+.env.local
+.env.*.local
+*.log
+*.tsbuildinfo
+coverage/
+# Phase 7 — vault key file (secret; keep out of git)
+.vault-key
+.vault.key

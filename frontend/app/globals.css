@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-ink font-sans antialiased;
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.25);
+}
+
+:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.5);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #070b13;
+}
+::-webkit-scrollbar-thumb {
+  background: #1d2a3f;
+  border-radius: 6px;
+  border: 2px solid #070b13;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3b57;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-panel border border-line bg-panel;
+  }
+  .panel-2 {
+    @apply rounded-panel border border-line bg-panel2;
+  }
+  .kbd {
+    @apply rounded-control border border-line bg-panel2 px-1.5 py-0.5 font-mono text-[11px] text-mut;
+  }
+  .input-dark {
+    @apply w-full rounded-control border border-line bg-panel2 px-3 py-2 text-sm text-ink placeholder:text-mut focus:border-attest focus:outline-none;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-control border border-line px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn border-attest/40 bg-attest/10 text-attest hover:bg-attest/20;
+  }
+  .btn-danger {
+    @apply btn border-bad/40 bg-bad/10 text-bad hover:bg-bad/20;
+  }
+  .btn-muted {
+    @apply btn bg-panel2 text-mut hover:text-ink hover:border-ink/30;
+  }
+  .eyebrow {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-attest;
+  }
+  .tick-line {
+    background-image: linear-gradient(to right, rgba(29, 42, 63, 0.6), rgba(29, 42, 63, 0));
+  }
+}
+
+@layer utilities {
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(29, 42, 63, 0.18) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(29, 42, 63, 0.18) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+}
