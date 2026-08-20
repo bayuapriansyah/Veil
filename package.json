@@ -17,7 +17,7 @@
     "demo:audit": "tsx services/audit/demo.ts",
     "test:audit": "tsx --test services/audit/audit.test.ts",
     "test:procurement": "tsx --test services/procurement/procurement.test.ts",
-    "test": "tsx --test services/provider/x402.test.ts services/demo/flow.test.ts services/procurement/procurement.test.ts services/audit/audit.test.ts"
+    "test": "tsx --test services/config/mode.test.ts services/provider/x402.test.ts services/demo/flow.test.ts services/procurement/procurement.test.ts services/audit/audit.test.ts"
   },
   "dependencies": {
     "@gluwa/usc-contracts": "0.1.2",

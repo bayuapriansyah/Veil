@@ -20,6 +20,7 @@ const EMPTY_STATE: VeilState = {
   orderIds: [],
   keySource: '',
   txsAtoms: '0',
+  mode: 'demo',
 };
 
 const TOOLS = [

@@ -21,6 +21,7 @@ const EMPTY_STATE: VeilState = {
   orderIds: [],
   keySource: '',
   txsAtoms: '0',
+  mode: 'demo',
 };
 
 export default function DashboardPage(): React.ReactElement {

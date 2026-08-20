@@ -65,6 +65,7 @@ const EMPTY_STATE: VeilState = {
   orderIds: [],
   keySource: '',
   txsAtoms: '0',
+  mode: 'demo',
 };
 
 function SidebarBody({
@@ -132,9 +133,15 @@ function SidebarBody({
       <div className="border-t border-line p-4">
         <div className="rounded-xl border border-line bg-panel p-4">
           <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-pend/50 bg-pend/10 px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-wider text-pend">
-              <span className="h-1.5 w-1.5 rounded-full bg-pend" />
-              Testnet
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-wider ${
+                s.mode === 'production'
+                  ? 'border-ok/50 bg-ok/10 text-ok'
+                  : 'border-pend/50 bg-pend/10 text-pend'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${s.mode === 'production' ? 'bg-ok' : 'bg-pend'}`} />
+              {s.mode === 'production' ? 'Production' : 'Demo'}
             </span>
             <span
               className={`h-2 w-2 rounded-full ${live === 'bad' ? 'bg-bad' : live === 'ok' ? 'bg-ok' : 'bg-pend'}`}

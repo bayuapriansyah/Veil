@@ -81,6 +81,7 @@ export interface VeilState {
   orderIds: string[];
   keySource: string;
   txsAtoms: string;
+  mode: 'demo' | 'production';
 }
 
 export const STAGE_SEQUENCE = [

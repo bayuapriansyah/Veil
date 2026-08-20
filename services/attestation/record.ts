@@ -13,6 +13,8 @@ import 'dotenv/config';
 
 import { Contract, JsonRpcProvider, Wallet } from 'ethers';
 
+import { isDemoMode } from '../config/mode';
+
 const SOURCE_ABI = [
   'function recordAgentPayment(uint256 orderId, address provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef) external',
   'function recordFulfillment(uint256 orderId, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef) external',
@@ -57,6 +59,11 @@ export async function recordAgentPayment(opts: {
   transactionRef: string;
 }): Promise<OnchainRecordResult> {
   const env = sourceChainEnv();
+  if (isDemoMode()) {
+    // Demo mode never touches an RPC: wallets are generated, so there is
+    // nothing to broadcast. The vault honestly labels this order `mirror`.
+    return { ok: false, error: 'demo mode — on-chain recording disabled (mirror)' };
+  }
   if (!env.contractAddress || !env.privateKey) {
     return { ok: false, error: 'on-chain record disabled: SOURCE_CHAIN_CONTRACT_ADDRESS / SOURCE_CHAIN_WALLET_PRIVATE_KEY not set' };
   }
@@ -97,6 +104,9 @@ export async function recordFulfillment(opts: {
   transactionRef: string;
 }): Promise<OnchainRecordResult> {
   const env = sourceChainEnv();
+  if (isDemoMode()) {
+    return { ok: false, error: 'demo mode — on-chain recording disabled (mirror)' };
+  }
   if (!env.contractAddress || !env.privateKey) {
     return { ok: false, error: 'on-chain record disabled: SOURCE_CHAIN_CONTRACT_ADDRESS / SOURCE_CHAIN_WALLET_PRIVATE_KEY not set' };
   }

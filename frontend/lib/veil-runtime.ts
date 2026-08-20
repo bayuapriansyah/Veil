@@ -18,6 +18,7 @@ import { Wallet } from 'ethers';
 import { SERVICE_COMPUTE, SERVICE_MARKET_DATA } from '../../services/provider/adapter';
 import { createProcurementShop, OPERATOR, PROVIDER } from '../../services/procurement/shop';
 import { ProcurementAgent } from '../../services/procurement/agent';
+import { isDemoMode, resolveVeilMode, type VeilMode } from '../../services/config/mode';
 
 export const PRICE_ATOMS = BigInt('1000000000000000'); // 0.001 per call
 export const BUDGET_ATOMS = PRICE_ATOMS * 40n;
@@ -62,6 +63,7 @@ export interface RuntimeState {
   orderIds: string[];
   keySource: string;
   txsAtoms: string; // "total value" settled, human label
+  mode: VeilMode;
 }
 
 export interface MandatePublic {
@@ -109,8 +111,18 @@ class VeilRuntime {
     if (this.started) return;
     this.started = true;
     this._auditorAddress = new Wallet(this.auditorKey).address;
+    // Identity provisioning is MODE-AWARE:
+    //  - demo:       generate a fresh agent wallet (no env keys, no funding).
+    //  - production: the agent identity IS the funded source-chain wallet, so
+    //                the x402 payer and the on-chain record signer are one.
+    const demo = isDemoMode();
+    const agentWallet = demo
+      ? Wallet.createRandom()
+      : new Wallet(process.env.SOURCE_CHAIN_WALLET_PRIVATE_KEY ?? Wallet.createRandom().privateKey);
     const { shop, close } = await createProcurementShop({
       operator: OPERATOR,
+      agentPrivateKey: agentWallet.privateKey,
+      agentAddress: agentWallet.address,
       // Start auto-assigned order ids high so restarts never collide with
       // already-recorded on-chain AgentPayment events (soft-fail avoided).
       orderIdSeed: 500_000n,
@@ -279,6 +291,7 @@ class VeilRuntime {
       orderIds: this.orders.map((o) => o.orderId),
       keySource: this.keySource,
       txsAtoms: spent.toString(),
+      mode: resolveVeilMode(),
     };
   }
 
