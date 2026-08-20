@@ -1,6 +1,7 @@
 import { Contract, ethers, JsonRpcApiProvider } from 'ethers';
 import { loadConfig, VeilConfig, sourcePollProvider, creditcoinProvider } from './config';
 import { generateProofFor, ProofGenerationResult } from './generateProof';
+import { SettlementResult, trySettleOrder } from './settle';
 
 /**
  * VEIL Attestcoin worker.
@@ -47,11 +48,25 @@ const MAX_PROCESSED_TXS = 1000;
  * audit panel's public "attestation" column can flip proving -> verified.
  * Never blocks the worker on a vault that is down.
  */
-async function notifyVault(attachUrl: string, txId: string, attestationTx: string, sourceTx?: string): Promise<void> {
+async function notifyVault(
+  attachUrl: string,
+  txId: string,
+  attestationTx: string,
+  sourceTx?: string,
+  settlement?: SettlementResult,
+): Promise<void> {
   const res = await fetch(attachUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ txId, attestationStatus: 'verified', attestationTx, sourceTx }),
+    body: JSON.stringify({
+      txId,
+      attestationStatus: 'verified',
+      attestationTx,
+      sourceTx,
+      settlement: settlement?.ok
+        ? { status: 'settled', txHash: settlement.settlementTxHash, escrowTxHash: settlement.escrowTxHash, mandateId: settlement.mandateId }
+        : undefined,
+    }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -136,6 +151,7 @@ async function main() {
   let fromBlock = Number(process.env.WORKER_FROM_BLOCK ?? (await srcProvider.getBlockNumber()));
   const processedTxs = new Set<string>();
   const pending = new Map<string, { action: number; orderId?: string }>();
+  const settledOrders = new Set<string>();
   const attachUrl = process.env.WORKER_AUDIT_ATTACH_URL ?? 'http://127.0.0.1:3000/api/veil/audit/attach';
 
   console.log('Attestcoin worker started.');
@@ -180,7 +196,23 @@ async function main() {
             processedTxs.add(txHash);
             pending.delete(txHash);
             if (orderId !== undefined) {
-              await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash).catch((e: any) => console.error(`vault notify failed: ${e?.message ?? e}`));
+              // Settlement is only valid once BOTH facts are ASC-verified, so it
+              // is attempted after the FulfillmentReceipt proof lands. Soft-fail:
+              // a transient error is logged and retried on the next cycle.
+              let settlement: SettlementResult | undefined;
+              if (action === 1 && !settledOrders.has(orderId)) {
+                const res = await trySettleOrder(config, ccProvider, orderId).catch(
+                  (e: any): SettlementResult => ({ ok: false, done: false, error: `settle exception: ${e?.message ?? e}` }),
+                );
+                if (res.ok) {
+                  console.log(`order ${orderId} settled on Creditcoin: settle=${res.settlementTxHash} escrow=${res.escrowTxHash} mandate=${res.mandateId}`);
+                  settlement = res;
+                } else {
+                  console.log(`settle order=${orderId} skipped: ${res.error}`);
+                }
+                if (res.done) settledOrders.add(orderId);
+              }
+              await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash, settlement).catch((e: any) => console.error(`vault notify failed: ${e?.message ?? e}`));
             }
           } else {
             console.log(`action=${action} pending for tx ${txHash}: ${proof.error}`);

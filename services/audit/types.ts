@@ -30,6 +30,12 @@ export interface PublicTxView {
   attestationStatus: 'mirror' | 'proving' | 'verified';
   /** Creditcoin AttestationReceiver proof-submit tx, once verified. */
   attestationTx?: string;
+  /** Live on-chain settlement (SettlementEngine.settle) tx on Creditcoin, once settled. */
+  settlementTx?: string;
+  /** EscrowManager.createEscrow tx on Creditcoin (the escrow lock). */
+  escrowTx?: string;
+  /** MandateManager mandate id backing the settlement. */
+  mandateId?: string;
 }
 
 /** Evidence collected across the VEIL stack (kept encrypted at rest). */
@@ -110,6 +116,9 @@ export interface TransactionRecord {
   sourceTx?: string;
   attestationStatus: 'mirror' | 'proving' | 'verified';
   attestationTx?: string;
+  settlementTx?: string;
+  escrowTx?: string;
+  mandateId?: string;
 }
 
 /** AES-256-GCM sealed box (base64), `tag` is the authentication tag. */

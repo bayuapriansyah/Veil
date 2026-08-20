@@ -108,7 +108,23 @@ export function AuditConsole(): React.ReactElement {
                     <td className="py-3.5 pr-5 font-mono text-xs text-mut">{t.commitment.slice(0, 16)}…</td>
                     <td className="py-3.5 pr-5 font-mono text-[13px] text-ok">{t.verificationStatus}</td>
                     <td className="py-3.5 pr-5 font-mono text-[13px] text-mut">{t.policyStatus}</td>
-                    <td className="py-3.5 pr-5 font-mono text-[13px] text-ok">{t.settlementStatus}</td>
+                    <td className="py-3.5 pr-5">
+                      <div className="flex flex-col gap-1">
+                        <span className={`font-mono text-[13px] ${t.settlementStatus === 'settled' ? 'text-ok' : 'text-mut'}`}>
+                          {t.settlementStatus}
+                        </span>
+                        {t.settlementTx && (
+                          <a
+                            className="font-mono text-[11px] text-ok underline decoration-ok/40 underline-offset-2 hover:text-ok"
+                            href={`https://blockscout.cc3-testnet.creditcoin.network/tx/${t.settlementTx}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            settle {txShort(t.settlementTx)}
+                          </a>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3.5 pr-5">
                       <div className="flex flex-col gap-1">
                         <StatusChip

@@ -64,6 +64,9 @@ export interface AuditTx {
   sourceTx?: string;
   attestationStatus: 'mirror' | 'proving' | 'verified';
   attestationTx?: string;
+  settlementTx?: string;
+  escrowTx?: string;
+  mandateId?: string;
 }
 
 export interface VeilState {

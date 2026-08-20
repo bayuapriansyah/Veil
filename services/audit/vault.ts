@@ -93,6 +93,21 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     return { ok: true };
   }
 
+  /**
+   * Attach the live on-chain settlement fact once the worker has settled the
+   * order on Creditcoin (SettlementEngine.settle). Public-only update — the
+   * sealed ciphertext and its commitment stay stable.
+   */
+  attachSettlement(txId: string, opts: { settlementStatus?: string; settlementTx?: string; escrowTx?: string; mandateId?: string }): { ok: boolean; error?: string } {
+    const rec = this.transactions.get(txId);
+    if (!rec) return { ok: false, error: 'TransactionNotKnown' };
+    if (opts.settlementStatus) rec.settlementStatus = opts.settlementStatus;
+    if (opts.settlementTx) rec.settlementTx = opts.settlementTx;
+    if (opts.escrowTx) rec.escrowTx = opts.escrowTx;
+    if (opts.mandateId) rec.mandateId = opts.mandateId;
+    return { ok: true };
+  }
+
   // --- public (never decrypts) -------------------------------------------- //
 
   get(txId: string): TransactionRecord | undefined {
@@ -214,6 +229,9 @@ function publicView(rec: TransactionRecord): PublicTxView {
     sourceTx: rec.sourceTx,
     attestationStatus: rec.attestationStatus,
     attestationTx: rec.attestationTx,
+    settlementTx: rec.settlementTx,
+    escrowTx: rec.escrowTx,
+    mandateId: rec.mandateId,
   };
 }
 

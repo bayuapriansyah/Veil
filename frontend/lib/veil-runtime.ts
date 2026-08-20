@@ -243,6 +243,12 @@ class VeilRuntime {
     return this.vault.attachAttestation(txId, opts);
   }
 
+  /** Record the live on-chain settlement fact once the worker settles on Creditcoin. */
+  attachSettlement(txId: string, opts: { settlementStatus?: string; settlementTx?: string; escrowTx?: string; mandateId?: string }): { ok: boolean; error?: string } {
+    void this.start();
+    return this.vault.attachSettlement(txId, opts);
+  }
+
   recordsFailed(order: RuntimeOrder): void {
     this.orders.unshift(order);
   }

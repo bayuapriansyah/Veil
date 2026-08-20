@@ -243,6 +243,34 @@ describe('VEIL privacy & audit layer', () => {
     assert.equal(pub.status, 200);
     assert.equal((await pub.json() as { txId?: string }).txId, txId);
   });
+
+  it('6. attachSettlement — the on-chain settlement fact is a public-only update; commitment unchanged', async () => {
+    const txId = 'tx-0006';
+    recordViaVault(txId, { settlementStatus: 'locked' });
+    const before = h.vault.publicView(txId)!;
+    const commitmentBefore = before.commitment;
+
+    const res = h.vault.attachSettlement(txId, {
+      settlementStatus: 'settled',
+      settlementTx: '0x' + 'ab'.repeat(32),
+      escrowTx: '0x' + 'cd'.repeat(32),
+      mandateId: '7',
+    });
+    assert.equal(res.ok, true);
+
+    const after = h.vault.publicView(txId)!;
+    assert.equal(after.settlementStatus, 'settled');
+    assert.equal(after.settlementTx, '0x' + 'ab'.repeat(32));
+    assert.equal(after.escrowTx, '0x' + 'cd'.repeat(32));
+    assert.equal(after.mandateId, '7');
+    // Public-only update: the commitment (binding the sealed ciphertext) must not move.
+    assert.equal(after.commitment, commitmentBefore);
+    assert.equal(after.encrypted, true);
+
+    // Unknown tx is refused.
+    const missing = h.vault.attachSettlement('tx-9999', { settlementStatus: 'settled' });
+    assert.equal(missing.ok, false);
+  });
 });
 
 function flipBase64(b64: string): string {

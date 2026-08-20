@@ -9,6 +9,7 @@
     "worker": "tsx services/attestation/worker.ts",
     "live-check": "tsx services/attestation/live-check.ts",
     "deploy": "tsx script/deploy.ts",
+    "deploy:settlement": "tsx script/deploy-settlement.ts",
     "typecheck": "tsc --noEmit",
     "compile-check": "node script/compile-check.js",
     "demo:provider": "tsx services/provider/server.ts",
