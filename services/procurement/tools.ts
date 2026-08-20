@@ -212,6 +212,7 @@ export function createAgentTools(shop: ProcurementShop): Map<ToolName, AgentTool
           paymentVerified: result.paymentVerified,
           fulfillmentVerified: result.fulfillmentVerified,
           escrowStatus: result.escrowStatus,
+          onchain: result.onchain,
         },
       };
     },

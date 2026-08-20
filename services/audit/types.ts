@@ -24,6 +24,12 @@ export interface PublicTxView {
   settlementStatus: string;
   encrypted: boolean;
   createdAt: number;
+  /** Live source-chain AgentPayment tx (public chain data), when recorded on-chain. */
+  sourceTx?: string;
+  /** Live attestation fact (public chain data): mirror = no on-chain record, proving = worker submitted, verified = proven on Creditcoin. */
+  attestationStatus: 'mirror' | 'proving' | 'verified';
+  /** Creditcoin AttestationReceiver proof-submit tx, once verified. */
+  attestationTx?: string;
 }
 
 /** Evidence collected across the VEIL stack (kept encrypted at rest). */
@@ -40,11 +46,13 @@ export interface EvidenceBundle {
     recordedAt: number;
   };
   attestation: {
-    /** Cross-chain reference (Creditcoin ASC / AttestationReceiver). */
+    /** Cross-chain reference (Creditcoin ASC / AttestationReceiver, or the source-chain tx). */
     attestationId: string;
     verified: boolean;
     /** Explicit: attestation verifies the fact — it does not grant privacy. */
     note: string;
+    /** mirror = no live on-chain record · proving = worker submitted · verified = proven on Creditcoin. */
+    stage?: 'mirror' | 'proving' | 'verified';
     recordedAt: number;
   };
   settlement: {
@@ -82,6 +90,12 @@ export interface TransactionInput {
   settlementStatus: string;
   protectedData: ProtectedData;
   createdAt?: number;
+  /** Live source-chain AgentPayment tx (public chain data). */
+  sourceTx?: string;
+  /** Live attestation fact; default 'mirror'. */
+  attestationStatus?: 'mirror' | 'proving' | 'verified';
+  /** Creditcoin proof-submit tx once verified (public chain data). */
+  attestationTx?: string;
 }
 
 /** A sealed, stored transaction record. Sensitive payload is ciphertext. */
@@ -93,6 +107,9 @@ export interface TransactionRecord {
   settlementStatus: string;
   createdAt: number;
   protected: SealedBox;
+  sourceTx?: string;
+  attestationStatus: 'mirror' | 'proving' | 'verified';
+  attestationTx?: string;
 }
 
 /** AES-256-GCM sealed box (base64), `tag` is the authentication tag. */

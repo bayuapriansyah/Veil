@@ -6,6 +6,10 @@
   color-scheme: dark;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 html,
 body {
   height: 100%;
@@ -15,14 +19,24 @@ body {
   @apply bg-bg text-ink font-sans antialiased;
 }
 
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
 ::selection {
-  background: rgba(56, 189, 248, 0.25);
+  background: rgba(63, 185, 80, 0.28);
 }
 
 :focus-visible {
-  outline: 2px solid rgba(56, 189, 248, 0.5);
+  outline: 2px solid rgba(63, 185, 80, 0.55);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar {
@@ -30,15 +44,97 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #070b13;
+  background: #0c0c0e;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1d2a3f;
+  background: #26262b;
   border-radius: 6px;
-  border: 2px solid #070b13;
+  border: 2px solid #0c0c0e;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a3b57;
+  background: #333339;
+}
+
+/* --- reference-style motion helpers --- */
+@keyframes veil-blur-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+.blur-in {
+  animation: veil-blur-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* site frame: 1px borders pinned to the viewport corners */
+.site-frame {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  border-color: rgba(38, 48, 58, 0.8);
+}
+.site-frame--top {
+  top: 0;
+  left: 0;
+  right: 0;
+  border-top-width: 1px;
+}
+.site-frame--bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-bottom-width: 1px;
+}
+.site-frame--left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-left-width: 1px;
+}
+.site-frame--right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  border-right-width: 1px;
+}
+
+.site-corner {
+  position: fixed;
+  z-index: 41;
+  pointer-events: none;
+  color: rgba(38, 48, 58, 0.8);
+}
+.site-corner--top-left {
+  top: 0;
+  left: 0;
+}
+.site-corner--top-right {
+  top: 0;
+  right: 0;
+}
+.site-corner--bottom-left {
+  bottom: 0;
+  left: 0;
+}
+.site-corner--bottom-right {
+  bottom: 0;
+  right: 0;
+}
+
+.mask-fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+}
+
+.grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -54,42 +150,140 @@ body {
 
 @layer components {
   .panel {
-    @apply rounded-panel border border-line bg-panel;
+    @apply rounded-2xl border border-line bg-panel shadow-card;
   }
   .panel-2 {
-    @apply rounded-panel border border-line bg-panel2;
+    @apply rounded-xl border border-line bg-panel2;
   }
   .kbd {
-    @apply rounded-control border border-line bg-panel2 px-1.5 py-0.5 font-mono text-[11px] text-mut;
+    @apply rounded-md border border-line bg-panel2 px-1.5 py-0.5 font-mono text-[11px] text-mut;
   }
   .input-dark {
-    @apply w-full rounded-control border border-line bg-panel2 px-3 py-2 text-sm text-ink placeholder:text-mut focus:border-attest focus:outline-none;
+    @apply w-full rounded-lg border border-line bg-panel2 px-3 py-2.5 text-sm text-ink placeholder:text-mut/70 transition-colors focus:border-ok/60 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-ok/15;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-control border border-line px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors duration-fast hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40;
   }
   .btn-primary {
-    @apply btn border-attest/40 bg-attest/10 text-attest hover:bg-attest/20;
+    @apply btn border-ok bg-ok font-semibold text-[#0c0c0e] hover:bg-ok/90;
   }
   .btn-danger {
-    @apply btn border-bad/40 bg-bad/10 text-bad hover:bg-bad/20;
+    @apply btn border-bad/30 bg-bad/10 text-bad hover:bg-bad/20;
   }
   .btn-muted {
-    @apply btn bg-panel2 text-mut hover:text-ink hover:border-ink/30;
+    @apply btn border-line bg-panel2 text-mut hover:border-ink/25 hover:text-ink;
   }
   .eyebrow {
     @apply font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-attest;
   }
   .tick-line {
-    background-image: linear-gradient(to right, rgba(29, 42, 63, 0.6), rgba(29, 42, 63, 0));
+    background-image: linear-gradient(
+      to right,
+      rgba(38, 38, 43, 0.6),
+      rgba(38, 38, 43, 0)
+    );
   }
 }
 
 @layer utilities {
   .bg-grid {
     background-image:
-      linear-gradient(rgba(29, 42, 63, 0.18) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(29, 42, 63, 0.18) 1px, transparent 1px);
+      linear-gradient(rgba(38, 38, 43, 0.18) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(38, 38, 43, 0.18) 1px, transparent 1px);
     background-size: 48px 48px;
   }
+}
+
+/* --- React Flow dark theme --- */
+.veil-flow {
+  background-color: #0c0c0e;
+  --xy-background-color: #0c0c0e;
+  --xy-edge-stroke: #2a2a30;
+  --xy-edge-stroke-width: 2;
+  --xy-node-border-default: #26262b;
+  --xy-node-background-color: #141417;
+  --xy-node-color-default: #f2f2f4;
+  --xy-attribution-background-color: transparent;
+  --xy-attribution-color: #3a3a41;
+  --xy-minimap-background-color: #0e0e11;
+  --xy-minimap-mask-background-color: rgba(12, 12, 14, 0.6);
+  --xy-minimap-mask-stroke-color: #3a3a41;
+  --xy-minimap-node-background-color: #3a3a41;
+  --xy-minimap-node-stroke-color: #26262b;
+  --xy-controls-button-background-color: #141417;
+  --xy-controls-button-background-color-hover: #1c1c21;
+  --xy-controls-button-background-color-active: #1c1c21;
+  --xy-controls-button-color: #9a9aa3;
+  --xy-controls-button-color-hover: #f2f2f4;
+  --xy-controls-button-color-active: #f2f2f4;
+  --xy-controls-button-border-color: #26262b;
+  --xy-controls-box-shadow: 0 12px 32px -18px rgba(0, 0, 0, 0.8);
+}
+
+.veil-node {
+  width: 190px;
+  border-radius: 12px;
+  border: 1px solid #26262b;
+  background: #141417;
+  box-shadow: 0 12px 32px -18px rgba(0, 0, 0, 0.7);
+  cursor: grab;
+}
+.veil-node:active {
+  cursor: grabbing;
+}
+.veil-node--ok {
+  border-color: rgba(63, 185, 80, 0.55);
+}
+.veil-node--bad {
+  border-color: rgba(248, 81, 73, 0.55);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+}
+.status-dot--ok {
+  background: #3fb950;
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.15);
+}
+.status-dot--bad {
+  background: #f85149;
+  box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.15);
+}
+.status-dot--pending {
+  background: #3a3a41;
+}
+
+.veil-edge--ok .react-flow__edge-path {
+  stroke: #3fb950;
+}
+.veil-edge--bad .react-flow__edge-path {
+  stroke: #f85149;
+}
+.veil-edge--pending .react-flow__edge-path {
+  stroke: #2a2a30;
+}
+
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  background: #26262b;
+  border: 1px solid #3a3a41;
+}
+.react-flow__handle:hover {
+  background: #3fb950;
+}
+
+.react-flow__controls {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #26262b;
+}
+
+.react-flow__minimap {
+  border: 1px solid #26262b;
+  border-radius: 10px;
+  overflow: hidden;
 }

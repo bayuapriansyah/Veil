@@ -42,7 +42,7 @@ function main() {
   let decoderAddr = process.env.USC_DECODER_LIBRARY_ADDRESS ?? '';
   if (!decoderAddr) {
     const out = run(
-      `forge create --rpc-url "${ccRpc}" --private-key "${pk}" ` +
+      `forge create --broadcast --rpc-url "${ccRpc}" --private-key "${pk}" ` +
         `node_modules/@gluwa/usc-contracts/contracts/decoding/EvmV1Decoder.sol:EvmV1Decoder`,
     );
     decoderAddr = extractAddress(out);
@@ -53,7 +53,7 @@ function main() {
 
   // 2. AttestationReceiver with linked library
   const ascOut = run(
-    `forge create --rpc-url "${ccRpc}" --private-key "${pk}" ` +
+    `forge create --broadcast --rpc-url "${ccRpc}" --private-key "${pk}" ` +
       `--libraries "@gluwa/usc-contracts/contracts/decoding/EvmV1Decoder.sol:EvmV1Decoder:${decoderAddr}" ` +
       `contracts/src/AttestationReceiver.sol:AttestationReceiver`,
   );
@@ -62,7 +62,7 @@ function main() {
 
   // 3. VeilSource on the source chain
   const sourceOut = run(
-    `forge create --rpc-url "${srcRpc}" --private-key "${pk}" contracts/src/VeilSource.sol:VeilSource`,
+    `forge create --broadcast --rpc-url "${srcRpc}" --private-key "${pk}" contracts/src/VeilSource.sol:VeilSource`,
   );
   const sourceAddr = extractAddress(sourceOut);
   console.log(`VeilSource deployed at: ${sourceAddr}`);

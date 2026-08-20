@@ -5,8 +5,8 @@ This document covers both realities of VEIL:
 1. **The demo** (frontend + in-process services) - runs locally with zero
    blockchain access.
 2. **The on-chain deployment** (Sepolia + Creditcoin CC3 Testnet) - executed
-   via `script/deploy.ts` (real `forge`/`cast`), and **blocked in this
-   environment** because no Foundry binary / funded wallets are available here.
+   via `script/deploy.ts` (real `forge`/`cast`) and **live on testnet** since
+   Phase 8 (addresses in section 5 and `TESTNET.md`).
 
 Companion docs: `ATTESTCOIN.md` (blocker inventory), `TESTNET.md` (reproduction
 walkthrough), `CONTRACTS.md` (what gets deployed).
@@ -55,8 +55,7 @@ VEIL_VAULT_KEY=<64-hex>           # durable vault key (else ephemeral)
 
 ### 2.2 Prereqs
 
-- `forge` + `cast` on PATH (Foundry). Not installed on this Windows box
-  (`foundryup` requires bash); see `ATTESTCOIN.md` section 6.
+- `forge` + `cast` on PATH (Foundry 1.5.1; `forge create` needs `--broadcast`).
 - Funded wallets: CTC on CC3 Testnet (Discord faucet) for the ASC + proofs;
   Sepolia ETH for `VeilSource` and source-chain calls.
 - `.env` populated per `.env.example`:
@@ -94,12 +93,16 @@ USC_DECODER_LIBRARY_ADDRESS=<decoderAddr>
 
 ```bash
 npm run worker    # watches Sepolia events, waits for attestation,
-                  # generates real proofs, submits to the ASC
+                  # generates real proofs, submits to the ASC,
+                  # then POSTs the proof tx to the console audit vault
 npm run live-check  # read-only canary against the live testnet
 ```
 
 At this point the console's purchase flow can also drive
 `VeilSource.recordAgentPayment` / `recordFulfillment` (see `TESTNET.md`).
+Purchases sign with the **dedicated agent wallet** (`SOURCE_CHAIN_WALLET_PRIVATE_KEY`),
+so the operator's deployer key never appears as the recurring on-chain identity;
+the agent wallet only needs a small Sepolia ETH balance for gas.
 
 ---
 
@@ -111,11 +114,14 @@ At this point the console's purchase flow can also drive
 | `PROOF_BUILDER_URL` | live | verified live at `https://prover.cc3-testnet.creditcoin.network` |
 | `SOURCE_CHAIN_ID` | live | `11155111` (Sepolia) |
 | `SOURCE_CHAIN_RPC_URL` | live | required for deploy/worker |
+| `SOURCE_CHAIN_POLL_RPC_URL` | live (opt) | dedicated RPC for the worker's `eth_getLogs` polling |
+| `WORKER_AUDIT_ATTACH_URL` | live (opt) | worker POSTs the verified proof tx to the console audit vault |
 | `CREDITCOIN_RPC_URL` | live | `https://rpc.cc3-testnet.creditcoin.network` (chainId `102031`) |
 | `SOURCE_CHAIN_CONTRACT_ADDRESS` | live | after deploy |
 | `USC_ATTESTATION_RECEIVER_ADDRESS` | live | after deploy |
 | `SETTLEMENT_ENGINE_ADDRESS` | live | after deploy (used by the engine wiring) |
 | `CREDITCOIN_WALLET_PRIVATE_KEY` | live | proof submit + deploy signer |
+| `SOURCE_CHAIN_WALLET_PRIVATE_KEY` | live | **dedicated agent wallet** that signs Sepolia `AgentPayment` records from the frontend rail (address hygiene: never the deployer key) |
 | `USC_DECODER_LIBRARY_ADDRESS` | optional | skip decoder redeploy |
 | `VEIL_PROVIDER_ADDRESS` | demo | provider's payTo address |
 | `PROVIDER_OPERATOR_ADDRESS` | demo | gates `/api/settle`, `/api/refund` |
@@ -142,14 +148,21 @@ x402 (see `.env.example` header + `ARCHITECTURE.md` honesty table).
 
 ## 5. Blocker inventory for live deployment here
 
+Live deployment was **fully executed** in this environment on CC3 Testnet +
+Sepolia (see `TESTNET.md` section 5.1 for the proof evidence table).
+
 | Item | Status |
 |---|---|
-| `forge` / `cast` installed | **BLOCKED** - not present; foundryup needs bash |
-| Deploy `VeilSource` (Sepolia) | **BLOCKED** - needs funded Sepolia wallet + RPC key |
-| Deploy ASC + decoder (CC3) | **BLOCKED** - needs funded CTC wallet (faucet) |
-| Real proof for a real event | **BLOCKED** - needs a mined source event first |
-| Live `npm run worker` | **BLOCKED** - needs the above |
+| `forge` / `cast` installed | **DONE** - `forge`/`cast` 1.5.1 at `C:\foundry\bin` (add to `PATH` per shell) |
+| Deploy `VeilSource` (Sepolia) | **DONE** - `0xbe2d0793344e656690be44b81128BbF0EDa6F93c` |
+| Deploy ASC + decoder (CC3) | **DONE** - ASC `0x071ff3210EA7619B7065ea24058030464093Dccd`, decoder `0x4eF11C369D9CAd4Fe68894a8B1D71Bc177c80b26` |
+| Register `VeilSource` on ASC | **DONE** - `veilSource()` returns the Sepolia address |
+| Real proof for a real event | **DONE** - 8/8 events proven & submitted (see `TESTNET.md` 5.1), including agent-wallet purchases attached to the live audit vault |
+| Live `npm run worker` | **DONE** - retries pending proofs every poll; survives RPC resets |
 | Compile + typecheck + tests | **DONE** in this environment |
 
-Nothing above was fabricated. The deployment script is real and will run
-wherever Foundry + funded wallets exist (`TESTNET.md` is the walkthrough).
+Deployment notes for reproduction: `forge` 1.5.1 requires `--broadcast` on
+`forge create` (already baked into `script/deploy.ts`), and `forge build` needs
+`--skip "contracts/test/*"` (forge-std is not installed). After a restart the
+worker re-scans from the current block by default — pass `WORKER_FROM_BLOCK` to
+re-ingest older events that have not been proven yet.

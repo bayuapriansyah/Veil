@@ -18,9 +18,9 @@ export default function CanvasPage(): React.ReactElement {
 
       <EconomyCanvas orders={orders} />
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      <div className="mt-8 grid gap-5 md:grid-cols-2">
         <Card title="How the visualization stays honest">
-          <p className="text-sm leading-relaxed text-mut">
+          <p className="text-[15px] leading-relaxed text-mut">
             Each pulse rides the <span className="font-mono text-ink">verified-stages</span> of the underlying order.
             A packet parks at{' '}
             <span className="font-mono text-ink">Authorization</span> if the mandate was refused, lights the path only
@@ -30,13 +30,13 @@ export default function CanvasPage(): React.ReactElement {
           </p>
         </Card>
         <Card title="Pipeline key">
-          <ul className="space-y-1.5 text-sm">
+          <ul className="space-y-2 text-[15px]">
             {CANVAS_NODES.map((n, i) => {
               const stage = Object.entries(STAGE_NODE_INDEX).find(([, v]) => v === i)?.[0];
               return (
                 <li key={n} className="flex justify-between">
-                  <span className="font-mono text-xs text-ink">{i + 1} · {n}</span>
-                  <span className="text-xs text-mut">{stage ? `verified by: ${stage}` : 'terminal node'}</span>
+                  <span className="font-mono text-[13px] text-ink">{i + 1} · {n}</span>
+                  <span className="text-sm text-mut">{stage ? `verified by: ${stage}` : 'terminal node'}</span>
                 </li>
               );
             })}
@@ -44,9 +44,9 @@ export default function CanvasPage(): React.ReactElement {
         </Card>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-5">
         <Card title="Disclaimer">
-          <p className="text-xs leading-relaxed text-mut">
+          <p className="text-sm leading-relaxed text-mut">
             The raw <span className="font-mono text-ink">attestation</span> step (AttestationReceiver / ASC) is mirrored
             in the demo SettlementLedger. No live cross-chain attestation or ASC submission is performed or claimed in
             this demo; the UI never presents a mirrored event as a real on-chain event.

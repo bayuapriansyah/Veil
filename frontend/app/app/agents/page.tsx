@@ -40,28 +40,25 @@ export default function AgentsPage(): React.ReactElement {
       />
 
       <Card title="Operator agent" right={<StatusChip status={s.agent.status === 'active' ? 'VERIFIED' : 'REJECTED'} label={s.agent.status.toUpperCase()} />}>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-panel border border-attest/40 bg-attest/10">
-              <Robot size={22} weight="regular" className="text-attest" />
+        <div className="flex flex-wrap items-center justify-between gap-5">
+          <div className="flex items-center gap-5">
+            <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-ok/40 bg-ok/10">
+              <Robot size={26} weight="regular" className="text-ok" />
             </div>
             <div>
-              <div className="font-mono text-sm text-ink">{shortAddress(s.agent.address, 6)}</div>
-              <div className="text-xs text-mut">deterministic planner · 7 tools</div>
+              <div className="font-mono text-base text-ink">{shortAddress(s.agent.address, 6)}</div>
+              <div className="mt-0.5 text-sm text-mut">deterministic planner · 7 tools</div>
             </div>
           </div>
-          <Link
-            href={`/app/agents/${s.agent.address}`}
-            className="rounded-control border border-line bg-panel2 px-4 py-2 text-sm text-mut transition-colors hover:text-ink"
-          >
+          <Link href={`/app/agents/${s.agent.address}`} className="btn-muted">
             Open cockpit
           </Link>
         </div>
       </Card>
 
-      <div className="mt-6">
-        <h2 className="mb-3 font-mono text-sm font-semibold uppercase tracking-wider text-ink">Provider agents</h2>
-        <div className="grid gap-4 md:grid-cols-2">
+      <div className="mt-8">
+        <h2 className="mb-4 text-base font-semibold text-ink">Provider agents</h2>
+        <div className="grid gap-5 md:grid-cols-2">
           {registry.map((p) => (
             <Card
               key={p.provider}
@@ -73,13 +70,13 @@ export default function AgentsPage(): React.ReactElement {
               }
               right={<span className="font-mono text-sm text-pend">rep {p.reputation}</span>}
             >
-              <div className="flex items-center justify-between text-xs text-mut">
+              <div className="flex items-center justify-between text-sm text-mut">
                 <span>{p.services.length} service(s)</span>
                 <span>{p.activeMandates} active mandates</span>
               </div>
-              <div className="mt-3 space-y-2">
+              <div className="mt-4 space-y-2.5">
                 {p.services.slice(0, 2).map((sv) => (
-                  <div key={sv.serviceId} className="rounded-md border border-line bg-panel2 px-3 py-2 text-xs">
+                  <div key={sv.serviceId} className="rounded-lg border border-line bg-panel2/70 px-3.5 py-2.5 text-sm">
                     <span className="font-medium text-ink">{sv.name}</span>
                     <span className="ml-2 text-mut">{sv.description}</span>
                   </div>

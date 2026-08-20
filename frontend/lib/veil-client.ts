@@ -61,6 +61,9 @@ export interface AuditTx {
   settlementStatus: string;
   createdAt: number;
   encrypted: boolean;
+  sourceTx?: string;
+  attestationStatus: 'mirror' | 'proving' | 'verified';
+  attestationTx?: string;
 }
 
 export interface VeilState {
@@ -136,12 +139,12 @@ export function timeAgo(tsSec: number): string {
 }
 
 export const STATUS_STYLE: Record<TxStatus, { chip: string; dot: string; label: string }> = {
-  PENDING: { chip: 'bg-amber-500/10 text-amber-300 border-amber-500/30', dot: 'bg-amber-400', label: 'PENDING' },
-  VERIFIED: { chip: 'bg-lime-500/10 text-lime-300 border-lime-500/30', dot: 'bg-lime-400', label: 'VERIFIED' },
-  FAILED: { chip: 'bg-red-500/10 text-red-300 border-red-500/30', dot: 'bg-red-400', label: 'FAILED' },
-  REJECTED: { chip: 'bg-red-500/10 text-red-300 border-red-500/30', dot: 'bg-red-400', label: 'REJECTED' },
-  REFUNDED: { chip: 'bg-sky-400/10 text-sky-300 border-sky-400/30', dot: 'bg-sky-300', label: 'REFUNDED' },
-  SETTLED: { chip: 'bg-cyan-400/10 text-cyan-300 border-cyan-400/30', dot: 'bg-cyan-300', label: 'SETTLED' },
+  PENDING: { chip: 'bg-pend/15 text-pend border-pend/50', dot: 'bg-pend', label: 'PENDING' },
+  VERIFIED: { chip: 'bg-ok/15 text-ok border-ok/50', dot: 'bg-ok', label: 'VERIFIED' },
+  FAILED: { chip: 'bg-bad/15 text-bad border-bad/50', dot: 'bg-bad', label: 'FAILED' },
+  REJECTED: { chip: 'bg-bad/15 text-bad border-bad/50', dot: 'bg-bad', label: 'REJECTED' },
+  REFUNDED: { chip: 'bg-mut/15 text-mut border-mut/50', dot: 'bg-mut', label: 'REFUNDED' },
+  SETTLED: { chip: 'bg-ok/15 text-ok border-ok/50', dot: 'bg-ok', label: 'SETTLED' },
 };
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

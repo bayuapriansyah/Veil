@@ -1,45 +1,51 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight } from '@phosphor-icons/react';
-import { Reveal } from './reveal';
+import { ArrowDownRight } from '@phosphor-icons/react';
 
 export function Cta(): React.ReactElement {
   return (
-    <section className="mx-auto max-w-6xl px-6 py-20 md:py-28">
-      <Reveal>
-        <div className="relative overflow-hidden rounded-card border border-attest/30 bg-panel p-10 text-center md:p-16">
-          <div
-            className="pointer-events-none absolute inset-0"
-            aria-hidden="true"
-            style={{
-              background: 'radial-gradient(60% 80% at 50% 0%, rgba(56,189,248,0.10) 0%, transparent 70%)',
-            }}
-          />
-          <p className="eyebrow">Built for BUIDL CTC</p>
-          <h2 className="mx-auto mt-5 max-w-2xl text-3xl font-semibold tracking-tight text-ink md:text-5xl">
-            Give your agents a rail you can verify.
-          </h2>
-          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-mut">
-            Open the live console to drive the agent, watch escrow settle, open the vault and pull the kill switch.
-          </p>
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/app"
-              className="inline-flex items-center gap-2 rounded-control border border-attest/40 bg-attest/10 px-6 py-3 text-sm font-medium text-attest transition-colors hover:bg-attest/20"
-            >
+    <section className="relative overflow-hidden border-t border-line px-6 py-28 md:py-36">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(55% 60% at 50% 100%, rgba(70,199,135,0.12) 0%, transparent 70%)',
+        }}
+      />
+      <div className="relative mx-auto max-w-3xl text-center">
+        <h2 className="text-5xl font-medium leading-[1.08] tracking-tight text-ink sm:text-6xl">
+          Give your agents a rail <em className="font-serif italic text-attest">you</em> can verify.
+        </h2>
+        <p className="blur-in mx-auto mt-7 max-w-xl text-lg leading-relaxed text-mut">
+          Open the live console to drive the agent, watch escrow settle, open the vault and pull the
+          kill switch.
+        </p>
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+          <Link href="/app" className="group relative inline-flex items-center">
+            <span className="absolute right-0 inset-y-0 w-[calc(100%-2rem)] rounded-2xl bg-attest/90" />
+            <span className="relative z-10 rounded-2xl bg-ink px-6 py-3 text-sm font-medium text-bg transition-colors hover:bg-white">
               Launch VEIL
-              <ArrowRight size={16} weight="regular" />
-            </Link>
-            <a
-              href="#architecture"
-              className="inline-flex items-center gap-2 rounded-control border border-line bg-panel2 px-6 py-3 text-sm font-medium text-mut transition-colors hover:text-ink"
-            >
-              Explore the Architecture
-            </a>
-          </div>
+            </span>
+            <span className="relative -left-px z-10 flex h-11 w-11 items-center justify-center rounded-2xl text-bg">
+              <ArrowDownRight
+                size={20}
+                weight="bold"
+                className="transition-transform duration-300 group-hover:-rotate-45"
+              />
+            </span>
+          </Link>
+          <a
+            href="https://github.com/bayuapriansyah/Veil"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-2xl border border-line bg-panel px-6 py-3 text-sm font-medium text-ink transition-all duration-fast hover:-translate-y-px hover:border-attest/40"
+          >
+            Read the architecture
+          </a>
         </div>
-      </Reveal>
+      </div>
     </section>
   );
 }

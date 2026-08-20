@@ -55,7 +55,7 @@ export async function generateProofFor(
   }
 
   // Give the proof builder a moment to ingest the attestation into its cache.
-  await proofBuilder.waitUntilHeightAttested(chainKey, blockNumber, 15_000, 300_000);
+  await proofBuilder.waitUntilHeightAttested(chainKey, blockNumber, 15_000, 900_000);
 
   const result = await proofBuilder.getProof(txHash);
   if (!result.success) {

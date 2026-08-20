@@ -71,9 +71,26 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
       settlementStatus: input.settlementStatus,
       createdAt,
       protected: box,
+      sourceTx: input.sourceTx,
+      attestationStatus: input.attestationStatus ?? 'mirror',
+      attestationTx: input.attestationTx,
     };
     this.transactions.set(txId, record);
     return { record, view: publicView(record) };
+  }
+
+  /**
+   * Attach the live attestation fact to a stored record once the worker has
+   * proven the source-chain tx on Creditcoin. Public-only update (tx hashes are
+   * public chain data) — the sealed ciphertext and its commitment stay stable.
+   */
+  attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): { ok: boolean; error?: string } {
+    const rec = this.transactions.get(txId);
+    if (!rec) return { ok: false, error: 'TransactionNotKnown' };
+    rec.attestationStatus = opts.attestationStatus;
+    if (opts.attestationTx) rec.attestationTx = opts.attestationTx;
+    if (opts.sourceTx) rec.sourceTx = opts.sourceTx;
+    return { ok: true };
   }
 
   // --- public (never decrypts) -------------------------------------------- //
@@ -194,6 +211,9 @@ function publicView(rec: TransactionRecord): PublicTxView {
     settlementStatus: rec.settlementStatus,
     createdAt: rec.createdAt,
     encrypted: true,
+    sourceTx: rec.sourceTx,
+    attestationStatus: rec.attestationStatus,
+    attestationTx: rec.attestationTx,
   };
 }
 

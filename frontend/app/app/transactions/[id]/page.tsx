@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { ArrowLeft } from '@phosphor-icons/react';
 import { Card, PageHeader, StatusChip } from '@/components/ui';
 import { TransactionTimeline } from '@/components/transaction-timeline';
 import { OrderDetail, atomsUsd, timeAgo } from '@/lib/veil-client';
@@ -20,8 +21,12 @@ export default function TransactionDetailPage(): React.ReactElement {
         right={
           <div className="flex items-center gap-3">
             {order && <StatusChip status={order.ok ? 'SETTLED' : 'REJECTED'} label={order.ok ? 'SETTLED' : 'REFUSED'} />}
-            <Link href="/app/transactions" className="text-xs text-attest hover:underline">
-              ← all transactions
+            <Link
+              href="/app/transactions"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 text-xs text-mut transition-colors hover:text-ink"
+            >
+              <ArrowLeft size={14} />
+              All transactions
             </Link>
           </div>
         }
@@ -32,13 +37,13 @@ export default function TransactionDetailPage(): React.ReactElement {
           <p className="py-10 text-center text-sm text-mut">Loading order…</p>
         </Card>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-7 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <TransactionTimeline order={order} />
           </div>
           <div className="space-y-6">
             <Card title="Facts">
-              <dl className="space-y-2 text-sm">
+              <dl className="space-y-3 text-[15px]">
                 <div className="flex justify-between gap-2">
                   <dt className="text-mut">Service</dt>
                   <dd className="text-ink">{order.serviceLabel}</dd>
@@ -61,7 +66,7 @@ export default function TransactionDetailPage(): React.ReactElement {
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-mut">Escrow</dt>
-                  <dd className="font-mono text-cyan-300">{order.escrowStatus}</dd>
+                  <dd className="font-mono text-attest">{order.escrowStatus}</dd>
                 </div>
               </dl>
             </Card>

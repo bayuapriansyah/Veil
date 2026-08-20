@@ -13,34 +13,37 @@ export function OrdersTable({ orders }: { orders: OrderDetail[] }): React.ReactE
   if (orders.length === 0) return <Empty message="No transactions yet. Send the agent a purchase from the Agent cockpit." />;
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
+      <table className="w-full min-w-[680px] text-left text-[15px]">
         <thead>
-          <tr className="border-b border-line font-mono text-[11px] uppercase tracking-wider text-mut">
-            <th className="pb-2 pr-4">Order</th>
-            <th className="pb-2 pr-4">Service</th>
-            <th className="pb-2 pr-4">Provider</th>
-            <th className="pb-2 pr-4 text-right">Amount</th>
-            <th className="pb-2 pr-4">Settlement</th>
-            <th className="pb-2">When</th>
+          <tr className="border-b border-line font-mono text-[11px] font-medium uppercase tracking-wider text-mut/80">
+            <th className="pb-3 pr-5">Order</th>
+            <th className="pb-3 pr-5">Service</th>
+            <th className="pb-3 pr-5">Provider</th>
+            <th className="pb-3 pr-5 text-right">Amount</th>
+            <th className="pb-3 pr-5">Settlement</th>
+            <th className="pb-3">When</th>
           </tr>
         </thead>
         <tbody>
           {orders.map((o) => (
-            <tr key={o.orderId} className="border-b border-line/40 last:border-0 hover:bg-panel2/40">
-              <td className="py-2.5 pr-4">
-                <Link href={`/app/transactions/${o.orderId}`} className="text-attest hover:underline">
+            <tr key={o.orderId} className="group border-b border-line/60 last:border-0 hover:bg-panel2/60">
+              <td className="py-3.5 pr-5">
+                <Link
+                  href={`/app/transactions/${o.orderId}`}
+                  className="text-ok transition-colors hover:underline"
+                >
                   <TxId id={o.orderId} />
                 </Link>
               </td>
-              <td className="py-2.5 pr-4 text-mut">{o.serviceLabel}</td>
-              <td className="py-2.5 pr-4">
-                <span className="font-mono text-xs text-mut">{o.provider.slice(0, 10)}…</span>
+              <td className="py-3.5 pr-5 text-mut">{o.serviceLabel}</td>
+              <td className="py-3.5 pr-5">
+                <span className="font-mono text-[13px] text-mut">{o.provider.slice(0, 10)}…</span>
               </td>
-              <td className="py-2.5 pr-4 text-right font-mono text-mut">{atomsUsd(o.amountAtoms)} USD</td>
-              <td className="py-2.5 pr-4">
+              <td className="py-3.5 pr-5 text-right font-mono text-[13px] text-mut">{atomsUsd(o.amountAtoms)} USD</td>
+              <td className="py-3.5 pr-5">
                 <StatusChip status={overall(o)} />
               </td>
-              <td className="py-2.5 text-xs text-mut">{timeAgo(Math.floor(o.createdAt / 1000))}</td>
+              <td className="py-3.5 text-[13px] text-mut/80">{timeAgo(Math.floor(o.createdAt / 1000))}</td>
             </tr>
           ))}
         </tbody>

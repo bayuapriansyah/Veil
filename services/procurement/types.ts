@@ -97,6 +97,8 @@ export interface PurchaseResult {
   paymentVerified?: boolean;
   fulfillmentVerified?: boolean;
   escrowStatus?: string;
+  /** Best-effort live source-chain record (AgentPayment event), if configured. */
+  onchain?: { txHash?: string; error?: string };
   error?: string;
 }
 

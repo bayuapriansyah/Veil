@@ -115,6 +115,10 @@ USC_ATTESTATION_RECEIVER_ADDRESS=<after deploy>
 SETTLEMENT_ENGINE_ADDRESS=<after deploy>
 CREDITCOIN_WALLET_PRIVATE_KEY=<funded CTC>
 USC_DECODER_LIBRARY_ADDRESS=<after deploy, optional>
+SOURCE_CHAIN_WALLET_PRIVATE_KEY=<funded Sepolia wallet used to record payments from the frontend rail>
+SOURCE_CHAIN_POLL_RPC_URL=<optional; dedicated RPC for the worker's eth_getLogs polling — some free RPCs throttle getLogs>
+WORKER_FROM_BLOCK=<optional; re-scan the source chain from an old block on restart>
+WORKER_AUDIT_ATTACH_URL=http://127.0.0.1:3000/api/veil/audit/attach (optional; the worker POSTs the verified proof tx here so the audit panel flips proving -> verified)
 ```
 
 ---
@@ -126,16 +130,45 @@ USC_DECODER_LIBRARY_ADDRESS=<after deploy, optional>
 | CC3 RPC reachable, chainId `102031` | **DONE** (Phase 0 direct RPC call) |
 | Proof Builder live (308 -> /api, health OK) | **DONE** (Phase 0) |
 | Sepolia chainKey `1`, Mainnet `3` | **DONE** (ChainInfo precompile) |
-| Attested height queryable | **DONE** (Phase 0 spike) |
+| Attested height queryable | **DONE** (Phase 0 spike; current lag ~44 blocks) |
 | BlockProver precompile address | **DONE** (CC3 chain config) |
 | 19 contracts compile (0.8.23) | **DONE** (`node script/compile-check.js`) |
 | services typecheck | **DONE** (`npm run typecheck`, exit 0) |
 | 26 tests / 4 suites | **DONE** (offline, in-process) |
-| `forge` / `cast` available | **BLOCKED** (not installed; foundryup needs bash) |
-| Deploy `VeilSource` on Sepolia | **BLOCKED** (needs funded Sepolia wallet + RPC key) |
-| Deploy ASC + decoder on CC3 | **BLOCKED** (needs funded CTC wallet) |
-| Real proof for a real VEIL event | **BLOCKED** (needs a mined source event first) |
-| Live `npm run worker` end-to-end | **BLOCKED** (needs the above) |
+| `forge` / `cast` available | **DONE** (`forge`/`cast` 1.5.1 at `C:\foundry\bin`) |
+| Deploy `VeilSource` on Sepolia | **DONE** — `0xbe2d0793344e656690be44b81128BbF0EDa6F93c` |
+| Deploy ASC + decoder on CC3 | **DONE** — ASC `0x071ff3210EA7619B7065ea24058030464093Dccd`, decoder `0x4eF11C369D9CAd4Fe68894a8B1D71Bc177c80b26`; `veilSource()` on ASC == Sepolia address |
+| Real proof for a real VEIL event | **DONE** — see evidence table below |
+| Live `npm run worker` end-to-end | **DONE** — see evidence table below |
+| Live on-chain record from the frontend rail | **DONE** — `PurchaseConsole` → `makePayment` → `VeilSource.recordAgentPayment` (soft-fail, `services/attestation/record.ts`) |
+
+### 5.1 Live on-chain evidence (this environment, CC3 Testnet)
+
+Source events mined on **Sepolia** (`VeilSource` `0xbe2d07…6F93c`), proven and
+submitted to the **AttestationReceiver** ASC on **CC3** (`0x071ff3…3Dccd`):
+
+| # | Action | Sepolia source tx (block) | CC3 proof/submit tx | CC3 block | AttestationReceiver event |
+|---|---|---|---|---|---|
+| 1 | payment order 1 (amount 1000) | `0xe57888d3…e689d1` (11529279) | `0x81bdc5c7…ba7bb19c` | 5343036 | `PaymentVerified` |
+| 2 | payment order 2 (amount 2000) | `0x773c0ba3…d7848de6` (11529320) | `0x4458acf4…d8696021` | 5343037 | `PaymentVerified` |
+| 3 | fulfillment order 1 | `0x1011fb03…bafc715bf` (11529281) | `0x5e112774…cb701cf40` | 5343039 | `FulfillmentVerified` |
+| 4 | fulfillment order 2 | `0x8b2e4d08…750c3e2d` (11529323) | `0x76d5a443…4082e2a2` | 5343040 | `FulfillmentVerified` |
+| 5 | payment order 1189 (live frontend purchase) | `0x569b6bf4…32f8cc4d75` (11529560) | `0x569e77b7…d2fd2f6` | 5343204 | `PaymentVerified` |
+| 6 | payment order 1190 (live frontend purchase) | `0xf8c9d6b5…fd01c20` (11529562) | `0x1f9ebf31…9c82756` | 5343211 | `PaymentVerified` |
+| 7 | payment order 400000 (agent-wallet purchase) | `0x7cda07f3…1db243ad43` (11529996) | `0x31559ca2…550c290bb` | 5343570 | `PaymentVerified` |
+| 8 | payment order 500000 (agent-wallet purchase, live audit) | `0xcbd5c56a…1aed9019c` (11530179) | `0xd65f59c5…642640720` | 5343728 | `PaymentVerified` |
+
+`PaymentVerified` topics decode to `(orderId, agent, provider, amount, serviceId,
+queryId)`; `FulfillmentVerified` to `(orderId, provider, resultHash, queryId)`.
+Agent and provider for all demo orders = `0x5264075C4a12BD3CdC356f587EcDa010BdcCF34A`
+and `0x2222…2222` (demo provider) respectively; **since the address-hygiene
+split, purchases are signed by the dedicated agent wallet
+`0x34252d307816948D440856Bb98245bE0EA60aAF2`** (rows 7-8). Attestation lag on
+CC3 for chainKey 1 measured at ~44 Sepolia blocks; the worker waits for
+attestation (configurable timeout, default 15 min) and retries failed proofs
+every poll cycle. Row 8 was proven and **attached live to the audit vault** via
+`POST /api/veil/audit/attach`, flipping `veil-500000` from `proving` to
+`verified` in the console.
 
 ---
 
@@ -153,7 +186,19 @@ USC_DECODER_LIBRARY_ADDRESS=<after deploy, optional>
 
 ## 7. Honesty note
 
-The demo console runs the **same state machine** against an in-memory mirror and
-labels those states **mirror** - it does not fabricate live attestations. The
-live loop above is the real path; it is written, compiles, and is ready, but was
-not executed here because the required tooling/wallets are absent.
+The demo console runs the same state machine against an in-memory mirror and
+labels those states **mirror** where no live on-chain event is claimed. Since
+Phase 8 wiring, every purchase made from the frontend `PurchaseConsole` ALSO
+records a real `AgentPayment` on Sepolia (best-effort, soft-fail), which the
+worker proves and submits to Creditcoin. The audit vault records the live facts
+in its **public** columns — `sourceTx` (the Sepolia AgentPayment) and
+`attestationStatus` (`mirror` / `proving` / `verified`) — and, once the worker
+submits the proof, the `attestationTx` (the Creditcoin proof-submit tx) via
+`POST /api/veil/audit/attach`. The system never fabricates a live attestation:
+a record stays `proving` (or `mirror` when nothing was recorded on-chain) until
+a real `PaymentVerified`/`FulfillmentVerified` event exists on Creditcoin.
+
+Since the 3-layer split, purchases are signed by a **dedicated agent wallet**
+(separate from the deployer wallet) so the operator's deployer key is never the
+recurring on-chain identity; the linkage between them is only the one-time
+funding transfer.

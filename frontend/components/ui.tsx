@@ -5,22 +5,22 @@ import { STATUS_STYLE, TxStatus, shortAddress, txShort } from '../lib/veil-clien
 
 export function PageHeader({ title, sub, right }: { title: string; sub?: string; right?: ReactNode }): React.ReactElement {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4 md:mb-8">
       <div>
-        <h1 className="font-mono text-xl font-semibold tracking-tight text-ink">{title}</h1>
-        {sub && <p className="mt-1 max-w-2xl text-sm leading-relaxed text-mut">{sub}</p>}
+        <h1 className="text-2xl font-semibold tracking-tight text-ink md:text-3xl">{title}</h1>
+        {sub && <p className="mt-2 max-w-3xl text-[15px] leading-relaxed text-mut">{sub}</p>}
       </div>
-      {right}
+      {right && <div className="flex items-center gap-3">{right}</div>}
     </div>
   );
 }
 
 export function Card({ title, children, right, className = '' }: { title?: ReactNode; children: ReactNode; right?: ReactNode; className?: string }): React.ReactElement {
   return (
-    <section className={`panel p-5 ${className}`}>
+    <section className={`panel p-5 md:p-6 ${className}`}>
       {title && (
-        <div className="mb-4 flex items-center justify-between border-b border-line pb-3">
-          <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-ink">{title}</h2>
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
           {right}
         </div>
       )}
@@ -33,10 +33,10 @@ export function Stat({ label, value, sub, tone = 'default' }: { label: string; v
   const color =
     tone === 'ok' ? 'text-ok' : tone === 'bad' ? 'text-bad' : tone === 'pend' ? 'text-pend' : 'text-ink';
   return (
-    <div className="panel p-4">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-mut">{label}</div>
-      <div className={`mt-2 font-mono text-2xl font-semibold ${color}`}>{value}</div>
-      {sub && <div className="mt-1 text-xs text-mut">{sub}</div>}
+    <div className="panel p-5 md:p-6">
+      <div className="text-xs font-medium uppercase tracking-wider text-mut">{label}</div>
+      <div className={`mt-2.5 text-2xl font-semibold tracking-tight md:text-3xl ${color}`}>{value}</div>
+      {sub && <div className="mt-1.5 text-sm text-mut/90">{sub}</div>}
     </div>
   );
 }
@@ -44,23 +44,32 @@ export function Stat({ label, value, sub, tone = 'default' }: { label: string; v
 export function StatusChip({ status, label }: { status: TxStatus; label?: string }): React.ReactElement {
   const st = STATUS_STYLE[status] ?? STATUS_STYLE.PENDING;
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] ${st.chip}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[11px] font-medium uppercase tracking-wide ${st.chip}`}>
+      <span className={`h-2 w-2 rounded-full ${st.dot}`} />
       {label ?? st.label}
     </span>
   );
 }
 
 export function Address({ addr, href, className = '' }: { addr: string; href?: string; className?: string }): React.ReactElement {
-  const text = <span className={`font-mono text-xs ${className}`}>{shortAddress(addr)}</span>;
+  const text = <span className={`font-mono text-[13px] ${className}`}>{shortAddress(addr)}</span>;
   if (!href) return text;
   return <a href={href}>{text}</a>;
 }
 
 export function TxId({ id }: { id: string }): React.ReactElement {
-  return <span className="font-mono text-xs text-attest">{txShort(id)}</span>;
+  return <span className="font-mono text-[13px] text-ok">{txShort(id)}</span>;
 }
 
-export function Empty({ message }: { message: string }): React.ReactElement {
-  return <div className="py-8 text-center text-sm text-mut">{message}</div>;
+export function Empty({ message, icon }: { message: string; icon?: ReactNode }): React.ReactElement {
+  return (
+    <div className="flex flex-col items-center gap-3 py-14 text-center">
+      {icon && (
+        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-panel2 text-mut">
+          {icon}
+        </div>
+      )}
+      <p className="max-w-md text-[15px] text-mut">{message}</p>
+    </div>
+  );
 }

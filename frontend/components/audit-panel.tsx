@@ -82,33 +82,62 @@ export function AuditConsole(): React.ReactElement {
           <Empty message="No sealed transactions yet. Run a purchase and it lands here immediately." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-[15px]">
               <thead>
-                <tr className="border-b border-line font-mono text-[11px] uppercase tracking-wider text-mut">
-                  <th className="pb-2 pr-4">TxId</th>
-                  <th className="pb-2 pr-4">Commitment</th>
-                  <th className="pb-2 pr-4">Verification</th>
-                  <th className="pb-2 pr-4">Policy</th>
-                  <th className="pb-2 pr-4">Settlement</th>
-                  <th className="pb-2">When</th>
+                <tr className="border-b border-line font-mono text-[11px] font-medium uppercase tracking-wider text-mut/80">
+                  <th className="pb-3 pr-5">TxId</th>
+                  <th className="pb-3 pr-5">Commitment</th>
+                  <th className="pb-3 pr-5">Verification</th>
+                  <th className="pb-3 pr-5">Policy</th>
+                  <th className="pb-3 pr-5">Settlement</th>
+                  <th className="pb-3 pr-5">Attestation</th>
+                  <th className="pb-3">When</th>
                 </tr>
               </thead>
               <tbody>
                 {txs.map((t) => (
-                  <tr key={t.txId} className="border-b border-line/40 last:border-0 hover:bg-panel2/40">
-                    <td className="py-2 pr-4">
+                  <tr key={t.txId} className="border-b border-line/60 last:border-0 hover:bg-panel2/60">
+                    <td className="py-3.5 pr-5">
                       <button
-                        className="font-mono text-xs text-attest hover:underline"
+                        className="font-mono text-[13px] text-ok hover:underline"
                         onClick={() => setSelected(t.txId)}
                       >
                         {txShort(t.txId)}
                       </button>
                     </td>
-                    <td className="py-2 pr-4 font-mono text-[11px] text-mut">{t.commitment.slice(0, 16)}…</td>
-                    <td className="py-2 pr-4 font-mono text-xs text-ok">{t.verificationStatus}</td>
-                    <td className="py-2 pr-4 font-mono text-xs text-mut">{t.policyStatus}</td>
-                    <td className="py-2 pr-4 font-mono text-xs text-cyan-300">{t.settlementStatus}</td>
-                    <td className="py-2 text-xs text-mut">{timeAgo(t.createdAt)}</td>
+                    <td className="py-3.5 pr-5 font-mono text-xs text-mut">{t.commitment.slice(0, 16)}…</td>
+                    <td className="py-3.5 pr-5 font-mono text-[13px] text-ok">{t.verificationStatus}</td>
+                    <td className="py-3.5 pr-5 font-mono text-[13px] text-mut">{t.policyStatus}</td>
+                    <td className="py-3.5 pr-5 font-mono text-[13px] text-ok">{t.settlementStatus}</td>
+                    <td className="py-3.5 pr-5">
+                      <div className="flex flex-col gap-1">
+                        <StatusChip
+                          status={t.attestationStatus === 'verified' ? 'VERIFIED' : t.attestationStatus === 'proving' ? 'PENDING' : 'REJECTED'}
+                          label={t.attestationStatus === 'verified' ? 'VERIFIED' : t.attestationStatus === 'proving' ? 'PROVING' : 'MIRROR'}
+                        />
+                        {t.sourceTx && (
+                          <a
+                            className="font-mono text-[11px] text-mut underline decoration-line/60 underline-offset-2 hover:text-ok"
+                            href={`https://sepolia.etherscan.io/tx/${t.sourceTx}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            src {txShort(t.sourceTx)}
+                          </a>
+                        )}
+                        {t.attestationTx && (
+                          <a
+                            className="font-mono text-[11px] text-ok underline decoration-ok/40 underline-offset-2 hover:text-ok"
+                            href={`https://blockscout.cc3-testnet.creditcoin.network/tx/${t.attestationTx}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            cc3 {txShort(t.attestationTx)}
+                          </a>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 text-[13px] text-mut/80">{timeAgo(t.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -154,14 +183,14 @@ export function AuditConsole(): React.ReactElement {
               </p>
             )}
             {disclosure && (
-              <pre className="max-h-56 overflow-auto rounded-lg border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-attest">
+              <pre className="max-h-60 overflow-auto rounded-lg border border-line bg-panel2 p-4 font-mono text-[12px] leading-relaxed text-ok">
                 {JSON.stringify(disclosure.data ?? { error: disclosure.error }, null, 2)}
               </pre>
             )}
             {goodAttempt && (
               <pre
-                className={`rounded-lg border p-3 font-mono text-[11px] ${
-                  goodAttempt.ok ? 'border-lime-500/40 text-ok' : 'border-bad/40 text-bad'
+                className={`rounded-lg border p-3.5 font-mono text-[12px] ${
+                  goodAttempt.ok ? 'border-ok/40 text-ok' : 'border-bad/30 text-bad'
                 }`}
               >
                 {goodAttempt.ok ? 'unexpectedly opened' : `REFUSED: ${goodAttempt.error}`}
@@ -185,26 +214,26 @@ export function AuditConsole(): React.ReactElement {
           <Empty message="No auditors registered yet." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[520px] text-left text-[15px]">
               <thead>
-                <tr className="border-b border-line font-mono text-[11px] uppercase tracking-wider text-mut">
-                  <th className="pb-2 pr-4">Auditor</th>
-                  <th className="pb-2 pr-4">Auth</th>
-                  <th className="pb-2 pr-4">Scope</th>
-                  <th className="pb-2">Action</th>
+                <tr className="border-b border-line font-mono text-[11px] font-medium uppercase tracking-wider text-mut/80">
+                  <th className="pb-3 pr-5">Auditor</th>
+                  <th className="pb-3 pr-5">Auth</th>
+                  <th className="pb-3 pr-5">Scope</th>
+                  <th className="pb-3">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {auditors.map((a) => (
-                  <tr key={a.auditor} className="border-b border-line/40 last:border-0">
-                    <td className="py-2 pr-4 font-mono text-xs text-ink">{shortAddress(a.auditor, 6)}</td>
-                    <td className="py-2 pr-4">
+                  <tr key={a.auditor} className="border-b border-line/60 last:border-0 hover:bg-panel2/60">
+                    <td className="py-3.5 pr-5 font-mono text-[13px] text-ink">{shortAddress(a.auditor, 6)}</td>
+                    <td className="py-3.5 pr-5">
                       <StatusChip status={a.authorized ? 'VERIFIED' : 'REJECTED'} label={a.authorized ? 'AUTHORIZED' : 'REVOKED'} />
                     </td>
-                    <td className="py-2 pr-4 font-mono text-xs text-mut">{a.revokedAt ? `revoked ${timeAgo(a.revokedAt)}` : 'all'}</td>
-                    <td className="py-2">
+                    <td className="py-3.5 pr-5 font-mono text-[13px] text-mut">{a.revokedAt ? `revoked ${timeAgo(a.revokedAt)}` : 'all'}</td>
+                    <td className="py-3.5">
                       <button
-                        className="text-xs text-attest hover:underline disabled:opacity-40"
+                        className="text-[13px] text-ok hover:underline disabled:opacity-40"
                         disabled={a.authorized}
                         onClick={() => void setScope(a.auditor, true)}
                       >
@@ -212,7 +241,7 @@ export function AuditConsole(): React.ReactElement {
                       </button>
                       <span className="mx-2 text-line">·</span>
                       <button
-                        className="text-xs text-bad hover:underline disabled:opacity-40"
+                        className="text-[13px] text-bad hover:underline disabled:opacity-40"
                         disabled={!a.authorized}
                         onClick={() => void setScope(a.auditor, false)}
                       >
@@ -225,10 +254,11 @@ export function AuditConsole(): React.ReactElement {
             </table>
           </div>
         )}
-        <p className="mt-4 rounded-md border border-line bg-panel2 p-3 text-xs leading-relaxed text-mut">
+        <p className="mt-5 rounded-lg border border-line bg-panel2/70 p-4 text-sm leading-relaxed text-mut">
           Boundary: the register seals amounts, agents and evidence with AES-256-GCM. Attestcoin verifies cross-chain
           facts. It does not grant privacy. Disclosure opens only to signed, authorized, in-scope auditors with an
-          unused nonce.
+          unused nonce. The <span className="text-ink">Attestation</span> column is public chain data (Sepolia source tx
+          + Creditcoin proof tx) — the facts are public; the business context stays sealed.
         </p>
       </Card>
     </div>

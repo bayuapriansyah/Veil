@@ -42,6 +42,8 @@ export interface RuntimeOrder {
   resultHash?: string;
   error?: string;
   escrowStatus: 'None' | 'Locked' | 'Released' | 'Refunded';
+  /** Live source-chain AgentPayment tx hash, when the on-chain record succeeded. */
+  onchainRecordTxHash?: string;
   stages: TimelineStage[];
 }
 
@@ -109,6 +111,9 @@ class VeilRuntime {
     this._auditorAddress = new Wallet(this.auditorKey).address;
     const { shop, close } = await createProcurementShop({
       operator: OPERATOR,
+      // Start auto-assigned order ids high so restarts never collide with
+      // already-recorded on-chain AgentPayment events (soft-fail avoided).
+      orderIdSeed: 500_000n,
       providers: [
         { address: PROVIDER, reputation: 5, services: [{ serviceId: SERVICE_MARKET_DATA, name: 'Market Data Feed', description: 'Real-time market data (per-call)', pricePerCallAtoms: PRICE_ATOMS }] },
         { address: '0x' + '44'.repeat(20), reputation: 5, services: [{ serviceId: SERVICE_MARKET_DATA, name: 'Market Data Feed', description: 'High-priced redundant feed', pricePerCallAtoms: PRICE_ATOMS * 3n }] },
@@ -136,7 +141,7 @@ class VeilRuntime {
     return SERVICE_LABELS[serviceId] ?? SERVICE_LABELS[SERVICE_MARKET_DATA];
   }
 
-  async purchase(task: string): Promise<{ ok: boolean; orderId?: string; reason?: string }> {
+  async purchase(task: string): Promise<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string }> {
     await this.start();
     if (this.killSwitch) return { ok: false, reason: 'kill switch engaged — mandate revoked, purchases refused' };
     const outcome = await this.agent.run(task);
@@ -167,21 +172,40 @@ class VeilRuntime {
       createdAt: Date.now(),
       resultHash,
       escrowStatus: escrowStatus === 2 ? 'Released' : escrowStatus === 1 ? 'Locked' : escrowStatus === 3 ? 'Refunded' : 'None',
+      onchainRecordTxHash: onchainTxHashOf(outcome),
       stages: successStages(settle.ok ? 'SETTLED' : 'PENDING'),
     };
     this.orders.unshift(order);
 
     // Record into the audit vault (encrypted at rest; public view only).
     this.recordAudit(order, outcome);
-    return { ok: true, orderId: outcome.orderId };
+    return { ok: true, orderId: outcome.orderId, onchainRecordTxHash: order.onchainRecordTxHash };
   }
 
   private recordAudit(order: RuntimeOrder, outcome: Awaited<ReturnType<ProcurementAgent['run']>>): void {
+    const onchain = order.onchainRecordTxHash;
+    const attestationEvidence = onchain
+      ? {
+        attestationId: onchain,
+        verified: false,
+        stage: 'proving' as const,
+        note: 'AgentPayment recorded on Sepolia — worker proving the block on Creditcoin; live fact tracked in the public record',
+        recordedAt: order.createdAt + 2,
+      }
+      : {
+        attestationId: `mirror:${order.orderId}`,
+        verified: true,
+        stage: 'mirror' as const,
+        note: 'no live on-chain record (soft-fail) — attestation state mirrored in the SettlementLedger for this demo',
+        recordedAt: order.createdAt + 2,
+      };
     this.vault.recordTransaction({
       txId: `veil-${order.orderId}`,
       verificationStatus: 'payment-verified fulfillment-verified',
       policyStatus: 'mandate-valid budget-compliant',
       settlementStatus: order.escrowStatus.toLowerCase(),
+      sourceTx: onchain,
+      attestationStatus: onchain ? 'proving' : 'mirror',
       protectedData: {
         agent: this.shop.agentAddress,
         provider: order.provider,
@@ -195,15 +219,16 @@ class VeilRuntime {
         },
         paymentEvidence: { orderId: order.orderId, paymentVerified: true, scheme: 'veil-exact', recordedAt: order.createdAt },
         fulfillmentEvidence: { resultHash: order.resultHash ?? '0x0', fulfillmentVerified: true, recordedAt: order.createdAt + 1 },
-        attestationEvidence: {
-          attestationId: `mirror:${order.orderId}`,
-          verified: true,
-          note: 'attestation state mirrored in the SettlementLedger for this demo — no live ASC submission is claimed',
-          recordedAt: order.createdAt + 2,
-        },
+        attestationEvidence,
         settlementEvidence: { escrowStatus: order.escrowStatus, settlementRef: order.resultHash ?? '0x0', recordedAt: order.createdAt + 3 },
       },
     });
+  }
+
+  /** Record the live attestation fact once the worker proves it on Creditcoin. */
+  attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): { ok: boolean; error?: string } {
+    void this.start();
+    return this.vault.attachAttestation(txId, opts);
   }
 
   recordsFailed(order: RuntimeOrder): void {
@@ -420,6 +445,15 @@ function successStages(finalSettlement: 'SETTLED' | 'PENDING'): TimelineStage[] 
 function orderAmountOf(outcome: Awaited<ReturnType<ProcurementAgent['run']>>, shop: { takeOffer: (id: bigint) => { amountAtoms: bigint } | undefined }): string {
   const offer = outcome.orderId ? shop.takeOffer(BigInt(outcome.orderId)) : undefined;
   return (offer?.amountAtoms ?? BigInt('1000000000000000')).toString();
+}
+
+/** Live source-chain AgentPayment tx hash from the makePayment tool result, if recorded. */
+function onchainTxHashOf(outcome: Awaited<ReturnType<ProcurementAgent['run']>>): string | undefined {
+  // The deterministic plan records results keyed by STEP INDEX (makePayment = 8),
+  // but accept the tool-name key defensively too.
+  const rec = outcome.results[8] ?? (outcome.results as Record<string, unknown>)['makePayment'];
+  const data = (rec as { data?: { onchain?: { txHash?: string } } } | undefined)?.data;
+  return data?.onchain?.txHash;
 }
 
 export function atomsToUsd(atoms: string | bigint): string {

@@ -1,17 +1,16 @@
 import Link from 'next/link';
 
 const LINKS = [
-  { href: '#problem', label: 'Problem' },
+  { href: '#ledger', label: 'Ledger' },
   { href: '#how-it-works', label: 'How it works' },
-  { href: '#architecture', label: 'Architecture' },
-  { href: '#security', label: 'Control' },
+  { href: '#control', label: 'Control' },
 ] as const;
 
 export function Footer(): React.ReactElement {
   return (
     <footer className="border-t border-line">
-      <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-8 px-6 py-12 md:flex-row md:items-center">
-        <div className="flex items-center gap-2.5">
+      <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-8 px-6 py-12 md:flex-row md:items-center">
+        <div className="flex items-center gap-3">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-attest/40 bg-attest/10 font-mono text-sm text-attest">
             V
           </span>
@@ -30,6 +29,22 @@ export function Footer(): React.ReactElement {
           <Link href="/app" className="text-sm text-attest transition-colors hover:text-attest/80">
             Launch console
           </Link>
+          <a
+            href="https://github.com/bayuapriansyah/Veil"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-mut transition-colors hover:text-ink"
+          >
+            Privacy
+          </a>
+          <a
+            href="https://github.com/bayuapriansyah/Veil"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-mut transition-colors hover:text-ink"
+          >
+            Terms
+          </a>
         </nav>
 
         <div className="text-xs text-mut">

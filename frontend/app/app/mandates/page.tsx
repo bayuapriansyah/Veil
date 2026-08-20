@@ -40,33 +40,33 @@ export default function MandatePage(): React.ReactElement {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-5 md:grid-cols-4">
         <Stat label="Budget" value={m ? atomsUsd(m.budgetAtoms) : 'N/A'} />
         <Stat label="Spent" value={m ? atomsUsd(m.spentAtoms) : 'N/A'} sub="settlement is when spend counts" />
         <Stat label="Remaining" value={m ? atomsUsd(m.remainingAtoms) : 'N/A'} tone={m && Number(BigInt(m.remainingAtoms)) > 0 ? 'ok' : 'bad'} />
         <Stat label="Expires" value={m ? timeAgo(m.expiresAt) : 'N/A'} />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-8 grid gap-7 lg:grid-cols-2">
         <Card title="Spend curve" right={<span className="font-mono text-[11px] text-mut">release-only</span>}>
           {m ? (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <BudgetGauge budgetAtoms={m.budgetAtoms} spentAtoms={m.spentAtoms} />
-              <div className="grid grid-cols-3 gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-3 text-[15px] sm:grid-cols-3">
                 <div>
-                  <div className="text-[11px] uppercase tracking-wider text-mut">Mandate id</div>
+                  <div className="text-xs uppercase tracking-wider text-mut">Mandate id</div>
                   <div className="font-mono text-ink">{m.mandateId}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-wider text-mut">Owner</div>
+                  <div className="text-xs uppercase tracking-wider text-mut">Owner</div>
                   <div className="font-mono text-mut">{m.owner.slice(0, 12)}…</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-wider text-mut">Service</div>
+                  <div className="text-xs uppercase tracking-wider text-mut">Service</div>
                   <div className="text-ink">{m.serviceLabel}</div>
                 </div>
               </div>
-              <div className="rounded-md border border-line bg-panel2 p-3 text-xs leading-relaxed text-mut">
+              <div className="rounded-lg border border-line bg-panel2/70 p-4 text-sm leading-relaxed text-mut">
                 Budget ceiling <span className="font-mono text-ink">{m.budgetAtoms}</span> atoms · spent{' '}
                 <span className="font-mono text-ink">{m.spentAtoms}</span> atoms · remaining{' '}
                 <span className="font-mono text-ink">{m.remainingAtoms}</span> atoms.
@@ -79,14 +79,14 @@ export default function MandatePage(): React.ReactElement {
 
         <div className="space-y-6">
           <Card title="Enforcement model">
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-3 text-[15px]">
               <li className="flex justify-between gap-2">
                 <span className="text-mut">Validity</span>
                 <span className="font-mono text-ok">not revoked · in scope · funded</span>
               </li>
               <li className="flex justify-between gap-2">
                 <span className="text-mut">Spend timing</span>
-                <span className="font-mono text-cyan-300">@ escrow release</span>
+                <span className="font-mono text-mut">@ escrow release</span>
               </li>
               <li className="flex justify-between gap-2">
                 <span className="text-mut">Provider gate</span>
@@ -97,7 +97,7 @@ export default function MandatePage(): React.ReactElement {
                 <span className="font-mono text-mut">ledger, not agent</span>
               </li>
             </ul>
-            <p className="mt-4 text-xs leading-relaxed text-mut">
+            <p className="mt-5 text-sm leading-relaxed text-mut">
               A kill switch below revokes this mandate on every provider ledger and the agent then refuses all future
               purchases at the gate.
             </p>

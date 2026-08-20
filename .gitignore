@@ -13,3 +13,10 @@ coverage/
 # Phase 7 — vault key file (secret; keep out of git)
 .vault-key
 .vault.key
+
+# Deployer wallet (secret; keep out of git)
+.wallet
+
+# Local tool config (not part of the project)
+.claude/
+.codex/

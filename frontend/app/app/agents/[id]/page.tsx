@@ -50,20 +50,20 @@ export default function AgentPage(): React.ReactElement {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-7 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <PurchaseConsole />
           <Card title="Answered so far">
             {orders.orders.length === 0 ? (
               <p className="text-sm text-mut">No runs yet.</p>
             ) : (
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-2.5 text-sm">
                 {orders.orders.slice(0, 4).map((o) => (
-                  <li key={o.orderId} className="flex items-center justify-between gap-3 border-b border-line/40 pb-2 last:border-0">
-                    <span className="font-mono text-xs text-attest">{o.orderId}</span>
+                  <li key={o.orderId} className="flex items-center justify-between gap-3 border-b border-line/60 pb-2.5 last:border-0">
+                    <span className="font-mono text-[13px] text-ok">{o.orderId}</span>
                     <span className="flex-1 truncate text-mut">{o.serviceLabel}</span>
                     <StatusChip status={o.ok ? 'SETTLED' : 'REJECTED'} />
-                    <span className="font-mono text-xs text-mut">{atomsUsd(o.amountAtoms)} USD</span>
+                    <span className="font-mono text-[13px] text-mut">{atomsUsd(o.amountAtoms)} USD</span>
                   </li>
                 ))}
               </ul>
@@ -73,29 +73,29 @@ export default function AgentPage(): React.ReactElement {
 
         <div className="space-y-6">
           <Card title="Identity">
-            <div className="space-y-3 text-sm">
+            <div className="space-y-4 text-sm">
               <div>
-                <div className="text-[11px] uppercase tracking-wider text-mut">Agent address</div>
-                <div className="mt-0.5"><Address addr={s.agent.address} /></div>
+                <div className="text-xs uppercase tracking-wider text-mut">Agent address</div>
+                <div className="mt-1"><Address addr={s.agent.address} /></div>
               </div>
               <div>
-                <div className="text-[11px] uppercase tracking-wider text-mut">Planner</div>
-                <div className="font-mono text-ink">deterministic 9-step</div>
+                <div className="text-xs uppercase tracking-wider text-mut">Planner</div>
+                <div className="mt-1 font-mono text-ink">deterministic 9-step</div>
               </div>
               <div>
-                <div className="text-[11px] uppercase tracking-wider text-mut">Rail</div>
-                <div className="font-mono text-ok">x402 · veil-exact</div>
+                <div className="text-xs uppercase tracking-wider text-mut">Rail</div>
+                <div className="mt-1 font-mono text-ok">x402 · veil-exact</div>
               </div>
             </div>
           </Card>
 
           <Card title="Tool surface" right={<span className="font-mono text-[11px] text-mut">exactly 7</span>}>
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
               {TOOLS.map(([name, note], i) => (
                 <li
                   key={name}
-                  className={`flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs ${
-                    i >= 5 ? 'border-cyan-500/30 bg-cyan-500/5 text-cyan-300' : 'border-line bg-bg text-mut'
+                  className={`flex items-center justify-between rounded-lg border px-3 py-2 text-[13px] ${
+                    i >= 5 ? 'border-ok/30 bg-ok/5 text-ok' : 'border-line bg-panel2/60 text-mut'
                   }`}
                 >
                   <span className="font-mono">{name}</span>
@@ -103,7 +103,7 @@ export default function AgentPage(): React.ReactElement {
                 </li>
               ))}
             </ul>
-            <p className="mt-3 text-[11px] leading-relaxed text-mut">
+            <p className="mt-4 text-xs leading-relaxed text-mut">
               No settle / refund / revoke / budget / verify / mandate tool exists. The agent can only shop; the ledger
               and operator settle.
             </p>
@@ -111,7 +111,7 @@ export default function AgentPage(): React.ReactElement {
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-8">
         <KillSwitch state={s} />
       </div>
     </div>

@@ -15,6 +15,7 @@ import { SERVICE_MARKET_DATA, signVeilPayment, VeilPaymentDomain } from '../prov
 import { SettlementLedger } from '../provider/ledger';
 import { VeilProvider, createVeilServer, base64Json, ProviderOptions, ServiceInfo } from '../provider/server';
 import { X402PaymentRequired } from '../provider/types';
+import { recordAgentPayment } from '../attestation/record';
 import {
   MandateView,
   PurchaseOffer,
@@ -50,6 +51,8 @@ export interface ProcurementShopConfig {
   operator?: string;
   /** Whole-dollar display budget for the user's mandate (string to avoid BigInt JSON bugs). */
   budgetDollars?: string;
+  /** First auto-assigned order id. Default 1189n (pinned by tests). */
+  orderIdSeed?: bigint;
 }
 
 export interface ShopHandle {
@@ -96,6 +99,7 @@ export class ProcurementShop {
   constructor(config: ProcurementShopConfig) {
     this.operator = config.operator ?? OPERATOR;
     this.agentPrivateKey = config.agentPrivateKey ?? AGENT_PRIVATE_KEY;
+    if (config.orderIdSeed !== undefined) this.nextOrderId = config.orderIdSeed;
     this.agentAddress =
       config.agentAddress && /^0x[0-9a-fA-F]{40}$/.test(config.agentAddress)
         ? config.agentAddress
@@ -314,6 +318,17 @@ export class ProcurementShop {
       return { ok: false, error: `recordAgentPayment failed: HTTP ${record.status}` };
     }
 
+    // Live source-chain record (soft-fail): emit a REAL AgentPayment event that
+    // the Attestcoin worker will prove on Creditcoin. Failure never blocks the
+    // HTTP rail — the mirror ledger stays authoritative for the UI.
+    const onchain = await recordAgentPayment({
+      orderId: offer.orderId,
+      provider: offer.provider,
+      amount,
+      serviceId: offer.serviceId,
+      transactionRef: keccak256(toUtf8Bytes(`${offer.orderId}`)),
+    });
+
     const payload = {
       x402Version: 2,
       accepted: {
@@ -375,6 +390,7 @@ export class ProcurementShop {
       paymentVerified: handle.provider.ledger.isPaymentVerified(offer.orderId),
       fulfillmentVerified: handle.provider.ledger.isFulfillmentVerified(offer.orderId),
       escrowStatus: escrowLabel(handle.provider.ledger.escrowStatus(offer.orderId)),
+      onchain: { txHash: onchain.txHash, error: onchain.error },
     };
   }
 }

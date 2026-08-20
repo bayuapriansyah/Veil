@@ -13,6 +13,8 @@ import { JsonRpcProvider } from 'ethers';
 export interface VeilConfig {
   sourceChainKey: number;
   sourceChainRpcUrl: string;
+  /** Optional RPC dedicated to event polling (some free RPCs throttle eth_getLogs). */
+  sourceChainPollRpcUrl: string;
   sourceChainContractAddress: string;
   creditcoinRpcUrl: string;
   attestationReceiverAddress: string;
@@ -39,6 +41,7 @@ export function loadConfig(): VeilConfig {
   return {
     sourceChainKey: Number(process.env.SOURCE_CHAIN_KEY ?? 1),
     sourceChainRpcUrl: process.env.SOURCE_CHAIN_RPC_URL!,
+    sourceChainPollRpcUrl: process.env.SOURCE_CHAIN_POLL_RPC_URL ?? process.env.SOURCE_CHAIN_RPC_URL!,
     sourceChainContractAddress: process.env.SOURCE_CHAIN_CONTRACT_ADDRESS!,
     creditcoinRpcUrl: process.env.CREDITCOIN_RPC_URL ?? 'https://rpc.cc3-testnet.creditcoin.network',
     attestationReceiverAddress: process.env.USC_ATTESTATION_RECEIVER_ADDRESS!,
@@ -60,6 +63,11 @@ export function isSolvableConfig(c: VeilConfig): boolean {
 
 export function sourceProvider(c: VeilConfig): JsonRpcProvider {
   return new JsonRpcProvider(c.sourceChainRpcUrl);
+}
+
+/** Provider used for the polling loop (getLogs-heavy; may use a dedicated RPC). */
+export function sourcePollProvider(c: VeilConfig): JsonRpcProvider {
+  return new JsonRpcProvider(c.sourceChainPollRpcUrl);
 }
 
 export function creditcoinProvider(c: VeilConfig): JsonRpcProvider {
