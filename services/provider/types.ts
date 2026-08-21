@@ -148,7 +148,7 @@ export interface SettlementStateProvider {
  * the provider server and procurement layer.
  */
 export interface VeilLedger extends SettlementStateProvider {
-  findActiveMandate(owner: string, serviceId: string): { mandateId: number; budget: bigint; spent: bigint } | undefined;
+  findActiveMandate(owner: string, serviceId: string): { mandateId: number; owner: string; agentId: number; budget: bigint; serviceId: string; expiresAt: number; revoked: boolean; spent: bigint } | undefined;
   createMandate(opts: unknown): { mandateId: number };
   createEscrow(opts: unknown): unknown;
   charge(opts: unknown): void;

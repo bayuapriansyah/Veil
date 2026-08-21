@@ -12,6 +12,8 @@
 import 'dotenv/config';
 
 import { Contract, JsonRpcProvider, Wallet } from 'ethers';
+import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { isDemoMode } from '../config/mode';
 
@@ -140,4 +142,51 @@ export async function recordFulfillment(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+// --- Error queue for failed recordings ------------------------------------ //
+
+export interface FailedRecord {
+  ts: string;
+  type: 'payment' | 'fulfillment';
+  orderId: string;
+  error: string;
+  opts: Record<string, string>;
+}
+
+const ERROR_DIR = join(process.cwd(), '.veil');
+const ERROR_FILE = join(ERROR_DIR, 'attestation-errors.json');
+
+function ensureErrorDir(): void {
+  if (!existsSync(ERROR_DIR)) mkdirSync(ERROR_DIR, { recursive: true });
+}
+
+/** Append a failed recording to the error queue for later replay. */
+export function appendError(record: FailedRecord): void {
+  try {
+    ensureErrorDir();
+    let records: FailedRecord[] = [];
+    try {
+      records = JSON.parse(readFileSync(ERROR_FILE, 'utf8'));
+    } catch { /* empty file */ }
+    records.push(record);
+    writeFileSync(ERROR_FILE, JSON.stringify(records, null, 2));
+  } catch { /* best-effort */ }
+}
+
+/** Read all failed recordings from the error queue. */
+export function readErrors(): FailedRecord[] {
+  try {
+    return JSON.parse(readFileSync(ERROR_FILE, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+/** Clear the error queue after successful replay. */
+export function clearErrors(): void {
+  try {
+    ensureErrorDir();
+    writeFileSync(ERROR_FILE, '[]');
+  } catch { /* best-effort */ }
 }

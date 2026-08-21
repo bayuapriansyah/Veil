@@ -268,6 +268,11 @@ export class ProcurementShop {
     return await this.handles.get(provider.toLowerCase())?.provider.ledger.reputationOf(provider) ?? 0;
   }
 
+  /** Synchronous reputation score from provider opts (used by veil-runtime state). */
+  reputationScore(provider: string): number {
+    return this.handles.get(provider.toLowerCase())?.provider.opts.reputation ?? 0;
+  }
+
   // --- purchasing (the ONLY payment path) --------------------------------- //
 
   reserveOrderId(): bigint {

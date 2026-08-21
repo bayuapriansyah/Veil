@@ -20,6 +20,7 @@ import type { Icon } from '@phosphor-icons/react';
 import { VeilState, shortAddress } from '../../lib/veil-client';
 import { usePoll } from '../../lib/use-poll';
 import { ConnectWallet } from '../connect-wallet';
+import { Warning } from '@phosphor-icons/react';
 
 interface NavItem {
   href: string;
@@ -137,17 +138,23 @@ function SidebarBody({
             <span
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-wider ${
                 s.mode === 'production'
-                  ? 'border-ok/50 bg-ok/10 text-ok'
+                  ? 'border-bad/50 bg-bad/10 text-bad'
                   : 'border-pend/50 bg-pend/10 text-pend'
               }`}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${s.mode === 'production' ? 'bg-ok' : 'bg-pend'}`} />
-              {s.mode === 'production' ? 'Production' : 'Demo'}
+              <span className={`h-1.5 w-1.5 rounded-full ${s.mode === 'production' ? 'bg-bad animate-pulse' : 'bg-pend'}`} />
+              {s.mode === 'production' ? 'LIVE' : 'Demo'}
             </span>
             <span
               className={`h-2 w-2 rounded-full ${live === 'bad' ? 'bg-bad' : live === 'ok' ? 'bg-ok' : 'bg-pend'}`}
             />
           </div>
+          {s.mode === 'production' && (
+            <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-bad/30 bg-bad/5 px-2.5 py-1.5">
+              <Warning size={12} className="shrink-0 text-bad" />
+              <span className="font-mono text-[10px] text-bad/80">Real CTC gas fees apply</span>
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-between font-mono text-[11px] text-mut">
             <span>key:{s.keySource || '…'}</span>
             <span className="text-ok">{shortAddress(s.agent.address, 3)}</span>

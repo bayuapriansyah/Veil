@@ -168,3 +168,33 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return body as T;
 }
+
+// --- Mode hook ------------------------------------------------------------- //
+
+import { useEffect, useState } from 'react';
+
+/**
+ * Hook that returns the current VEIL mode ('demo' | 'production') by
+ * polling the /api/veil/state endpoint. Falls back to 'demo' on error.
+ */
+export function useVeilMode(): 'demo' | 'production' {
+  const [mode, setMode] = useState<'demo' | 'production'>('demo');
+
+  useEffect(() => {
+    let active = true;
+    const poll = async (): Promise<void> => {
+      try {
+        const res = await fetch('/api/veil/state');
+        const data = await res.json();
+        if (active && data?.state?.mode) setMode(data.state.mode);
+      } catch {
+        // ignore — default to demo
+      }
+    };
+    void poll();
+    const id = setInterval(poll, 8000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+
+  return mode;
+}

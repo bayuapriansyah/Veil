@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Spinner } from '@phosphor-icons/react';
+import { X, Spinner, Warning } from '@phosphor-icons/react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from 'wagmi';
 import { parseAbiItem } from 'viem';
 import { cc3 } from '../lib/wagmi-config';
+import { useVeilMode } from '../lib/veil-client';
 
 const VEIL_REGISTRY_ADDRESS = (process.env.NEXT_PUBLIC_VEIL_REGISTRY_ADDRESS ?? '0x6d9DCfAFC1Ee54Dcc1922d3d6BfC4C03402500eE') as `0x${string}`;
 
@@ -26,6 +27,7 @@ export function AgentRegisterModal({ open, onClose }: AgentRegisterModalProps) {
   const [agentId, setAgentId] = useState<string | null>(null);
   const [step, setStep] = useState<'idle' | 'switching' | 'signing' | 'mining' | 'done' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const mode = useVeilMode();
 
   // Escape key + body scroll lock
   useEffect(() => {
@@ -144,9 +146,15 @@ export function AgentRegisterModal({ open, onClose }: AgentRegisterModalProps) {
 
             {/* Header */}
             <h2 className="mb-1 text-lg font-semibold text-ink">Register My Agent</h2>
-            <p className="mb-6 text-sm text-mut">
+            <p className="mb-4 text-sm text-mut">
               Mendaftarkan agent baru on-chain menggunakan wallet address kamu.
             </p>
+            {mode === 'production' && (
+              <div className="mb-5 flex items-center gap-2 rounded-lg border border-bad/30 bg-bad/5 px-4 py-2.5">
+                <Warning size={14} className="shrink-0 text-bad" />
+                <span className="text-xs text-bad/80">Live mode — this costs real CTC gas on Creditcoin CC3</span>
+              </div>
+            )}
 
             {/* Wallet info */}
             {address && (

@@ -2,6 +2,7 @@ import { Contract, ethers, JsonRpcApiProvider } from 'ethers';
 import { loadConfig, VeilConfig, sourcePollProvider, creditcoinProvider } from './config';
 import { generateProofFor, ProofGenerationResult } from './generateProof';
 import { SettlementResult, trySettleOrder } from './settle';
+import { createServer } from 'node:http';
 
 /**
  * VEIL Attestcoin worker.
@@ -30,15 +31,80 @@ const VEIL_SOURCE_ABI = [
   'event FulfillmentReceipt(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef)',
 ];
 
+// --- Structured logging ---------------------------------------------------- //
+
+interface LogEntry {
+  ts: string;
+  level: 'info' | 'warn' | 'error';
+  msg: string;
+  [key: string]: unknown;
+}
+
+function log(level: LogEntry['level'], msg: string, extra?: Record<string, unknown>): void {
+  const entry: LogEntry = { ts: new Date().toISOString(), level, msg, ...extra };
+  const line = JSON.stringify(entry);
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else console.log(line);
+}
+
+// --- Graceful shutdown ----------------------------------------------------- //
+
 let isShuttingDown = false;
+let shutdownReason = '';
 process.on('SIGINT', () => {
-  console.log('Received SIGINT, shutting down gracefully...');
+  shutdownReason = 'SIGINT';
+  log('info', 'Received SIGINT, shutting down gracefully...');
   isShuttingDown = true;
 });
 process.on('SIGTERM', () => {
-  console.log('Received SIGTERM, shutting down gracefully...');
+  shutdownReason = 'SIGTERM';
+  log('info', 'Received SIGTERM, shutting down gracefully...');
   isShuttingDown = true;
 });
+
+// --- Retry with exponential backoff ---------------------------------------- //
+
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1_000;
+
+async function withRetry<T>(fn: () => Promise<T>, label: string, maxRetries = MAX_RETRIES): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt < maxRetries) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        log('warn', `${label} attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms`, { error: String(e) });
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
+// --- Health check endpoint ------------------------------------------------- //
+
+let lastPollAt = 0;
+let processedCount = 0;
+let errorCount = 0;
+
+function startHealthCheck(port: number): void {
+  const server = createServer((_, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      status: isShuttingDown ? 'shutting-down' : 'ok',
+      uptime: process.uptime(),
+      lastPollAt: lastPollAt ? new Date(lastPollAt).toISOString() : null,
+      processedCount,
+      errorCount,
+      shutdownReason: shutdownReason || undefined,
+    }));
+  });
+  server.listen(port, () => log('info', `Health check listening on :${port}`));
+}
 
 const POLL_INTERVAL_MS = 10_000;
 const MAX_PROCESSED_TXS = 1000;
@@ -153,15 +219,22 @@ async function main() {
   const pending = new Map<string, { action: number; orderId?: string }>();
   const settledOrders = new Set<string>();
   const attachUrl = process.env.WORKER_AUDIT_ATTACH_URL ?? 'http://127.0.0.1:3000/api/veil/audit/attach';
+  const healthPort = Number(process.env.WORKER_HEALTH_PORT ?? '8082');
 
-  console.log('Attestcoin worker started.');
-  console.log(`sourceChainKey=${config.sourceChainKey}`);
-  console.log(`VeilSource=${config.sourceChainContractAddress}`);
-  console.log(`AttestationReceiver=${config.attestationReceiverAddress}`);
-  console.log(`Polling source chain from block ${fromBlock}`);
+  // Start health check endpoint
+  startHealthCheck(healthPort);
+
+  log('info', 'Attestcoin worker started', {
+    sourceChainKey: config.sourceChainKey,
+    veilSource: config.sourceChainContractAddress,
+    attestationReceiver: config.attestationReceiverAddress,
+    fromBlock,
+    healthPort,
+  });
 
   while (!isShuttingDown) {
     try {
+      lastPollAt = Date.now();
       const latest = await srcProvider.getBlockNumber();
       if (latest < fromBlock) {
         fromBlock = latest;
@@ -176,49 +249,54 @@ async function main() {
         const txHash = ev.transactionHash;
         if (processedTxs.has(txHash) || pending.has(txHash)) continue;
         pending.set(txHash, { action: 0, orderId: 'args' in ev && ev.args ? ev.args[0]?.toString() : undefined });
-        console.log(`AgentPayment detected: order=${'args' in ev && ev.args ? ev.args[0] : '?'} tx=${txHash}`);
+        log('info', 'AgentPayment detected', { order: 'args' in ev && ev.args ? String(ev.args[0]) : '?', tx: txHash });
       }
       for (const ev of fulfillments) {
         const txHash = ev.transactionHash;
         if (processedTxs.has(txHash) || pending.has(txHash)) continue;
         pending.set(txHash, { action: 1, orderId: 'args' in ev && ev.args ? ev.args[0]?.toString() : undefined });
-        console.log(`FulfillmentReceipt detected: order=${'args' in ev && ev.args ? ev.args[0] : '?'} tx=${txHash}`);
+        log('info', 'FulfillmentReceipt detected', { order: 'args' in ev && ev.args ? String(ev.args[0]) : '?', tx: txHash });
       }
 
       fromBlock = latest + 1;
 
       for (const [txHash, { action, orderId }] of [...pending]) {
         try {
-          const proof = await generateProofFor(txHash, config.sourceChainKey, config.proofBuilderUrl, ccProvider, srcProvider);
+          const proof = await withRetry(
+            () => generateProofFor(txHash, config.sourceChainKey, config.proofBuilderUrl, ccProvider, srcProvider),
+            `proof-gen-${txHash}`,
+          );
           if (proof.success) {
-            const hash = await submitProof(config, ccProvider, receiverContract, proof, action);
-            console.log(`action=${action} verified on Creditcoin for tx ${txHash}: ${hash}`);
+            const hash = await withRetry(
+              () => submitProof(config, ccProvider, receiverContract, proof, action),
+              `submit-proof-${txHash}`,
+            );
+            log('info', 'Proof verified on Creditcoin', { action, tx: txHash, creditcoinTx: hash });
             processedTxs.add(txHash);
             pending.delete(txHash);
+            processedCount++;
             if (orderId !== undefined) {
-              // Settlement is only valid once BOTH facts are ASC-verified, so it
-              // is attempted after the FulfillmentReceipt proof lands. Soft-fail:
-              // a transient error is logged and retried on the next cycle.
               let settlement: SettlementResult | undefined;
               if (action === 1 && !settledOrders.has(orderId)) {
                 const res = await trySettleOrder(config, ccProvider, orderId).catch(
                   (e: any): SettlementResult => ({ ok: false, done: false, error: `settle exception: ${e?.message ?? e}` }),
                 );
                 if (res.ok) {
-                  console.log(`order ${orderId} settled on Creditcoin: settle=${res.settlementTxHash} escrow=${res.escrowTxHash} mandate=${res.mandateId}`);
+                  log('info', 'Order settled on Creditcoin', { orderId, settle: res.settlementTxHash, escrow: res.escrowTxHash, mandateId: res.mandateId });
                   settlement = res;
                 } else {
-                  console.log(`settle order=${orderId} skipped: ${res.error}`);
+                  log('warn', 'Settle skipped', { orderId, error: res.error });
                 }
                 if (res.done) settledOrders.add(orderId);
               }
-              await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash, settlement).catch((e: any) => console.error(`vault notify failed: ${e?.message ?? e}`));
+              await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash, settlement).catch((e: any) => log('error', 'Vault notify failed', { orderId, error: e?.message ?? e }));
             }
           } else {
-            console.log(`action=${action} pending for tx ${txHash}: ${proof.error}`);
+            log('info', 'Proof pending', { action, tx: txHash, reason: proof.error });
           }
         } catch (e: any) {
-          console.error(`action=${action} processing error for tx ${txHash}: ${e?.message ?? e}`);
+          errorCount++;
+          log('error', 'Processing error', { action, tx: txHash, error: e?.message ?? e });
         }
       }
 
@@ -226,8 +304,8 @@ async function main() {
         processedTxs.clear();
       }
     } catch (e: any) {
-      // Transient RPC resets must never kill the worker — log and continue.
-      console.error(`poll cycle error: ${e?.message ?? e}`);
+      errorCount++;
+      log('error', 'Poll cycle error', { error: e?.message ?? e });
     }
 
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -235,12 +313,12 @@ async function main() {
 
   srcProvider.destroy();
   ccProvider.destroy();
-  console.log('Worker stopped.');
+  log('info', 'Worker stopped', { reason: shutdownReason, processedCount, errorCount });
 }
 
 if (require.main === module) {
   main().catch((e) => {
-    console.error(e);
+    log('error', 'Fatal error', { error: e?.message ?? e, stack: e?.stack });
     process.exit(1);
   });
 }

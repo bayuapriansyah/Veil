@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { api, VeilState, atomsUsd } from '../lib/veil-client';
+import { Warning } from '@phosphor-icons/react';
+import { api, VeilState, atomsUsd, useVeilMode } from '../lib/veil-client';
 import { Card, StatusChip } from './ui';
 
 const SUGGESTED = ['Buy one unit of live market data for my trading dashboard', 'Purchase a market data feed (one call)'];
@@ -10,6 +11,7 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
   const [task, setTask] = useState(SUGGESTED[0]);
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string } | null>(null);
+  const mode = useVeilMode();
 
   const run = async (): Promise<void> => {
     setBusy(true);
@@ -37,6 +39,12 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
   return (
     <Card title="Purchase Console" right={<span className="font-mono text-[11px] text-mut">7 tools · mandate-gated</span>}>
       <div className="flex flex-col gap-4">
+        {mode === 'production' && (
+          <div className="flex items-center gap-2 rounded-lg border border-bad/30 bg-bad/5 px-4 py-2.5">
+            <Warning size={14} className="shrink-0 text-bad" />
+            <span className="text-xs text-bad/80">Live mode — real CTC gas fees apply on Sepolia + CC3</span>
+          </div>
+        )}
         <textarea
           className="input-dark min-h-[100px] resize-y font-mono text-sm"
           value={task}
@@ -70,6 +78,7 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
 
 export function KillSwitch({ state, onDied }: { state: VeilState; onDied?: () => void }): React.ReactElement {
   const [busy, setBusy] = useState(false);
+  const mode = useVeilMode();
   const engage = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -88,6 +97,12 @@ export function KillSwitch({ state, onDied }: { state: VeilState; onDied?: () =>
         Revokes every mandate on every provider ledger (mirrors MandateManager revoke) and makes the agent refuse future
         purchases at the gate.
       </p>
+      {mode === 'production' && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-bad/30 bg-bad/5 px-3 py-2">
+          <Warning size={12} className="shrink-0 text-bad" />
+          <span className="text-xs text-bad/80">In production this revokes live on-chain mandates</span>
+        </div>
+      )}
       <div className="mt-4 flex gap-2">
         <button className="btn-danger" onClick={() => void engage()} disabled={busy || state.killSwitch}>
           {state.killSwitch ? 'Engaged · mandates revoked' : busy ? 'Revoking…' : 'Engage kill switch'}
