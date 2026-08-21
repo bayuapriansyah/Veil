@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Spinner } from '@phosphor-icons/react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from 'wagmi';
 import { parseAbiItem } from 'viem';
+import { cc3 } from '../lib/wagmi-config';
 
 const VEIL_REGISTRY_ADDRESS = (process.env.NEXT_PUBLIC_VEIL_REGISTRY_ADDRESS ?? '0x6d9DCfAFC1Ee54Dcc1922d3d6BfC4C03402500eE') as `0x${string}`;
 
@@ -19,9 +20,12 @@ interface AgentRegisterModalProps {
 
 export function AgentRegisterModal({ open, onClose }: AgentRegisterModalProps) {
   const { address, chain } = useAccount();
-  const { writeContract, data: txHash, isPending, error: txError } = useWriteContract();
+  const { switchChainAsync } = useSwitchChain();
+  const { writeContract, data: txHash, isPending, error: txError, reset } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
   const [agentId, setAgentId] = useState<string | null>(null);
+  const [step, setStep] = useState<'idle' | 'switching' | 'signing' | 'mining' | 'done' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Escape key + body scroll lock
   useEffect(() => {
@@ -42,29 +46,68 @@ export function AgentRegisterModal({ open, onClose }: AgentRegisterModalProps) {
   useEffect(() => {
     if (open) {
       setAgentId(null);
+      setStep('idle');
+      setErrorMsg(null);
+      reset();
     }
   }, [open]);
 
-  // Parse agentId from tx receipt logs
+  // Track tx confirmation
   useEffect(() => {
     if (isConfirmed && txHash) {
-      // AgentRegistered event: event AgentRegistered(uint256 indexed agentId, address indexed owner, string endpoint)
-      // The agentId is in the first topic (indexed)
+      setStep('done');
       setAgentId('registered');
     }
   }, [isConfirmed, txHash]);
 
-  function handleRegister() {
+  // Track errors
+  useEffect(() => {
+    if (txError) {
+      setStep('error');
+      if (txError.message?.includes('User rejected') || txError.message?.includes('user rejected')) {
+        setErrorMsg('Transaction rejected by user');
+      } else if (txError.message?.includes('insufficient funds')) {
+        setErrorMsg('Insufficient CTC for gas. Top up your wallet on CC3.');
+      } else {
+        setErrorMsg(`Registration failed: ${txError.message?.slice(0, 100)}`);
+      }
+    }
+  }, [txError]);
+
+  async function handleRegister() {
     if (!address) return;
-    writeContract({
-      address: VEIL_REGISTRY_ADDRESS,
-      abi: [REGISTER_AGENT_ABI],
-      functionName: 'registerAgent',
-      args: ['', '', '0x0000000000000000000000000000000000000000000000000000000000000000'],
-    });
+    setErrorMsg(null);
+
+    // Step 1: Switch to CC3 if not already on it
+    if (chain?.id !== cc3.id) {
+      setStep('switching');
+      try {
+        await switchChainAsync({ chainId: cc3.id });
+      } catch (e: unknown) {
+        setStep('error');
+        setErrorMsg('Gagal switch ke CC3 chain. Pastikan MetaMask memiliki CC3 network.');
+        return;
+      }
+    }
+
+    // Step 2: Send tx
+    setStep('signing');
+    try {
+      writeContract({
+        address: VEIL_REGISTRY_ADDRESS,
+        abi: [REGISTER_AGENT_ABI],
+        functionName: 'registerAgent',
+        args: ['', '', '0x0000000000000000000000000000000000000000000000000000000000000000'],
+        chainId: cc3.id,
+      });
+      setStep('mining');
+    } catch {
+      setStep('error');
+      setErrorMsg('Gagal mengirim transaksi');
+    }
   }
 
-  const isOnCC3 = chain?.id === 102031;
+  const isOnCC3 = chain?.id === cc3.id;
 
   return (
     <AnimatePresence>
@@ -110,8 +153,16 @@ export function AgentRegisterModal({ open, onClose }: AgentRegisterModalProps) {
               <div className="mb-5 rounded-xl border border-line bg-panel2/70 p-4">
                 <div className="mb-2 text-xs text-mut">Wallet connected</div>
                 <div className="font-mono text-sm text-ink">{address}</div>
-                <div className="mt-1 text-xs text-mut">
-                  Chain: {chain?.name ?? 'Unknown'} (ID: {chain?.id ?? '?'})
+                <div className="mt-1 flex items-center gap-2 text-xs text-mut">
+                  Chain:
+                  <span className={isOnCC3 ? 'font-medium text-ok' : 'font-medium text-pend'}>
+                    {chain?.name ?? 'Unknown'} (ID: {chain?.id ?? '?'})
+                  </span>
+                  {!isOnCC3 && (
+                    <span className="rounded bg-pend/15 px-1.5 py-0.5 text-[10px] text-pend">
+                      perlu switch
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -123,55 +174,71 @@ export function AgentRegisterModal({ open, onClose }: AgentRegisterModalProps) {
               </div>
             )}
 
-            {/* Wrong chain */}
-            {address && !isOnCC3 && (
+            {/* Step indicators */}
+            {step === 'switching' && (
               <div className="mb-5 rounded-xl border border-pend/30 bg-pend/5 p-4">
-                <p className="text-sm text-pend">
-                  Switch ke Creditcoin CC3 (ID: 102031) untuk register agent.
-                </p>
-              </div>
-            )}
-
-            {/* Result */}
-            {isConfirmed && (
-              <div className="mb-5 rounded-xl border border-ok/30 bg-ok/5 p-4">
-                <div className="text-sm font-medium text-ok">✓ Agent registered on CC3</div>
-                <div className="mt-1 font-mono text-xs text-mut">
-                  Tx: {txHash?.slice(0, 10)}…{txHash?.slice(-8)}
+                <div className="flex items-center gap-2 text-sm text-pend">
+                  <Spinner size={14} className="animate-spin" />
+                  Switching ke Creditcoin CC3…
                 </div>
               </div>
             )}
 
+            {step === 'signing' && (
+              <div className="mb-5 rounded-xl border border-pend/30 bg-pend/5 p-4">
+                <div className="flex items-center gap-2 text-sm text-pend">
+                  <Spinner size={14} className="animate-spin" />
+                  Confirm di MetaMask…
+                </div>
+              </div>
+            )}
+
+            {step === 'mining' && (
+              <div className="mb-5 rounded-xl border border-pend/30 bg-pend/5 p-4">
+                <div className="flex items-center gap-2 text-sm text-pend">
+                  <Spinner size={14} className="animate-spin" />
+                  Mining on CC3…
+                </div>
+                {txHash && (
+                  <div className="mt-2 font-mono text-[10px] text-mut">
+                    Tx: {txHash.slice(0, 10)}…{txHash.slice(-8)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Success */}
+            {step === 'done' && (
+              <div className="mb-5 rounded-xl border border-ok/30 bg-ok/5 p-4">
+                <div className="text-sm font-medium text-ok">✓ Agent registered on CC3</div>
+                {txHash && (
+                  <div className="mt-1 font-mono text-xs text-mut">
+                    Tx: {txHash.slice(0, 10)}…{txHash.slice(-8)}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Error */}
-            {txError && (
+            {step === 'error' && errorMsg && (
               <div className="mb-5 rounded-xl border border-fail/30 bg-fail/5 p-4">
-                <p className="text-sm text-fail">
-                  {txError.message?.includes('User rejected')
-                    ? 'Transaction rejected by user'
-                    : 'Registration failed — coba lagi'}
-                </p>
+                <p className="text-sm text-fail">{errorMsg}</p>
               </div>
             )}
 
             {/* Register button */}
             <button
               onClick={handleRegister}
-              disabled={!address || isPending || isConfirming || isConfirmed}
+              disabled={!address || step === 'switching' || step === 'signing' || step === 'mining' || step === 'done'}
               className="btn btn-primary w-full"
             >
               {!address && 'Connect Wallet First'}
-              {isPending && (
-                <span className="flex items-center justify-center gap-2">
-                  <Spinner size={14} className="animate-spin" /> Confirm in MetaMask…
-                </span>
-              )}
-              {isConfirming && (
-                <span className="flex items-center justify-center gap-2">
-                  <Spinner size={14} className="animate-spin" /> Mining on CC3…
-                </span>
-              )}
-              {isConfirmed && 'Registered ✓'}
-              {!isPending && !isConfirming && !isConfirmed && address && 'Register My Agent'}
+              {step === 'idle' && address && 'Register My Agent'}
+              {step === 'switching' && 'Switching Chain…'}
+              {step === 'signing' && 'Confirm in MetaMask…'}
+              {step === 'mining' && 'Mining on CC3…'}
+              {step === 'done' && 'Registered ✓'}
+              {step === 'error' && 'Try Again'}
             </button>
 
             {/* Footer */}
