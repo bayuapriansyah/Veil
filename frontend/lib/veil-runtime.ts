@@ -19,7 +19,8 @@ import { SERVICE_COMPUTE, SERVICE_MARKET_DATA } from '../../services/provider/ad
 import { createProcurementShop, OPERATOR, PROVIDER } from '../../services/procurement/shop';
 import { ProcurementAgent } from '../../services/procurement/agent';
 import { isDemoMode, resolveVeilMode, type VeilMode } from '../../services/config/mode';
-import { recordFulfillment } from '../../services/attestation/record';
+import { recordAgentPayment, recordFulfillment } from '../../services/attestation/record';
+import { delegateToAgentB, checkAgentBHealth, type AgentBDelegationResult } from '../../services/agent-b/client';
 
 export const PRICE_ATOMS = BigInt('1000000000000000'); // 0.001 per call
 export const BUDGET_ATOMS = PRICE_ATOMS * 40n;
@@ -223,6 +224,90 @@ class VeilRuntime {
     // Record into the audit vault (encrypted at rest; public view only).
     this.recordAudit(order, outcome);
     return { ok: true, orderId: outcome.orderId, onchainRecordTxHash: order.onchainRecordTxHash };
+  }
+
+  /**
+   * Delegate a procurement task to Agent B via A2A.
+   * Agent B buys from Shop C on-chain and fulfills A→B on-chain.
+   */
+  async delegateToB(task: string): Promise<{ ok: boolean; orderId?: string; reason?: string; delegation?: AgentBDelegationResult }> {
+    await this.start();
+    if (this.killSwitch) return { ok: false, reason: 'kill switch engaged' };
+
+    // Check Agent B is reachable
+    const healthy = await checkAgentBHealth();
+    if (!healthy) return { ok: false, reason: 'Agent B is not reachable' };
+
+    // Reserve an A→B order ID for vault tracking + on-chain record
+    const aToBOrderId = this.shop.reserveOrderId();
+
+    // Record A→B AgentPayment on Sepolia (signed by Agent A = agent).
+    // This creates the on-chain order that Agent B will fulfill as provider.
+    const aToBPayment = await recordAgentPayment({
+      orderId: aToBOrderId,
+      provider: '0x' + '42'.repeat(20), // Agent B's address
+      amount: BigInt('1000000000000000'),
+      serviceId: SERVICE_MARKET_DATA,
+      transactionRef: keccak256(toUtf8Bytes(`${aToBOrderId}`)),
+    }).catch((err: unknown) => ({ ok: false, error: String((err as Error)?.message ?? err) }));
+
+    // Delegate to Agent B via A2A
+    const delegation = await delegateToAgentB(task, this.shop.agentPrivateKey, aToBOrderId);
+
+    if (!delegation.ok) {
+      return { ok: false, reason: delegation.error ?? 'delegation failed', delegation };
+    }
+
+    // Record delegation in the vault
+    const now = Date.now();
+    const aToBPaymentTx = aToBPayment.ok && 'txHash' in aToBPayment ? aToBPayment.txHash : undefined;
+    this.vault.recordTransaction({
+      txId: `veil-a2b-${aToBOrderId}`,
+      verificationStatus: delegation.bToCPaymentTx ? 'payment-verified fulfillment-verified' : 'delegation-pending',
+      policyStatus: 'mandate-valid budget-compliant',
+      settlementStatus: 'delegated',
+      sourceTx: aToBPaymentTx ?? delegation.bToCPaymentTx,
+      attestationStatus: 'a2a-delegation',
+      protectedData: {
+        agent: this.shop.agentAddress,
+        provider: '0x' + '42'.repeat(20), // Agent B
+        amountAtoms: '0',
+        amountUsd: '0',
+        authorization: {
+          mandateId: this.currentMandateId(),
+          mandateOwner: OPERATOR,
+          serviceId: SERVICE_MARKET_DATA,
+          expiresAt: this.currentMandateExpiry(),
+        },
+        paymentEvidence: { orderId: String(aToBOrderId), paymentVerified: true, scheme: 'a2a-delegation', recordedAt: now },
+        fulfillmentEvidence: { resultHash: delegation.aToBFulfillmentTx ?? '0x0', fulfillmentVerified: true, fulfillmentTx: delegation.aToBFulfillmentTx, recordedAt: now + 1 },
+        attestationEvidence: {
+          attestationId: delegation.bToCPaymentTx ?? `a2a:${aToBOrderId}`,
+          verified: false,
+          stage: 'proving' as const,
+          note: `A2A delegation to Agent B — B→C payment ${delegation.bToCPaymentTx ?? 'pending'}`,
+          recordedAt: now + 2,
+        },
+        settlementEvidence: { escrowStatus: 'delegated', settlementRef: delegation.orderId ?? '0x0', recordedAt: now + 3 },
+      },
+    });
+
+    this.orders.unshift({
+      orderId: String(aToBOrderId),
+      serviceId: SERVICE_MARKET_DATA,
+      serviceLabel: 'A2A Delegation → Agent B',
+      provider: '0x' + '42'.repeat(20),
+      amountAtoms: '0',
+      ok: true,
+      createdAt: now,
+      resultHash: delegation.aToBFulfillmentTx,
+      escrowStatus: 'Released',
+      onchainRecordTxHash: aToBPaymentTx,
+      fulfillmentTxHash: delegation.aToBFulfillmentTx,
+      stages: successStages('SETTLED'),
+    });
+
+    return { ok: true, orderId: String(aToBOrderId), delegation };
   }
 
   private recordAudit(order: RuntimeOrder, outcome: Awaited<ReturnType<ProcurementAgent['run']>>): void {

@@ -26,8 +26,8 @@ export interface PublicTxView {
   createdAt: number;
   /** Live source-chain AgentPayment tx (public chain data), when recorded on-chain. */
   sourceTx?: string;
-  /** Live attestation fact (public chain data): mirror = no on-chain record, proving = worker submitted, verified = proven on Creditcoin. */
-  attestationStatus: 'mirror' | 'proving' | 'verified';
+  /** Live attestation fact (public chain data): mirror = no on-chain record, proving = worker submitted, verified = proven on Creditcoin, a2a-delegation = A2A delegated. */
+  attestationStatus: 'mirror' | 'proving' | 'verified' | 'a2a-delegation';
   /** Creditcoin AttestationReceiver proof-submit tx, once verified. */
   attestationTx?: string;
   /** Live on-chain settlement (SettlementEngine.settle) tx on Creditcoin, once settled. */
@@ -101,7 +101,7 @@ export interface TransactionInput {
   /** Live source-chain AgentPayment tx (public chain data). */
   sourceTx?: string;
   /** Live attestation fact; default 'mirror'. */
-  attestationStatus?: 'mirror' | 'proving' | 'verified';
+  attestationStatus?: 'mirror' | 'proving' | 'verified' | 'a2a-delegation';
   /** Creditcoin proof-submit tx once verified (public chain data). */
   attestationTx?: string;
 }
@@ -116,7 +116,7 @@ export interface TransactionRecord {
   createdAt: number;
   protected: SealedBox;
   sourceTx?: string;
-  attestationStatus: 'mirror' | 'proving' | 'verified';
+  attestationStatus: 'mirror' | 'proving' | 'verified' | 'a2a-delegation';
   attestationTx?: string;
   settlementTx?: string;
   escrowTx?: string;
