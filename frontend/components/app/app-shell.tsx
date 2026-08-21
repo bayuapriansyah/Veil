@@ -19,6 +19,7 @@ import {
 import type { Icon } from '@phosphor-icons/react';
 import { VeilState, shortAddress } from '../../lib/veil-client';
 import { usePoll } from '../../lib/use-poll';
+import { ConnectWallet } from '../connect-wallet';
 
 interface NavItem {
   href: string;
@@ -234,6 +235,7 @@ export function AppShell({ children }: { children: React.ReactNode }): React.Rea
             <span className="truncate text-ink">{current?.label ?? 'Console'}</span>
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            <ConnectWallet />
             <span className="hidden items-center gap-2 rounded-full border border-line bg-panel px-3.5 py-1.5 font-mono text-[11px] text-mut sm:inline-flex">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${live === 'bad' ? 'bg-bad' : live === 'ok' ? 'bg-ok' : 'bg-pend'}`}

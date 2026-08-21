@@ -3,6 +3,7 @@ import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import { Lora } from 'next/font/google';
 import { SiteFrame } from '../components/site-frame';
+import { Web3Provider } from '../components/web3-provider';
 import './globals.css';
 
 const lora = Lora({
@@ -47,7 +48,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
           Skip to content
         </a>
         <SiteFrame />
-        {children}
+        <Web3Provider>
+          {children}
+        </Web3Provider>
       </body>
     </html>
   );
