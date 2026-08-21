@@ -5,6 +5,9 @@
  * Agent B is a separate identity with its own wallet, shop, and on-chain
  * settlement flow.
  *
+ * On startup, Agent B self-registers on the VeilRegistry contract on CC3,
+ * making its endpoint discoverable by Agent A on-chain.
+ *
  * Endpoints:
  *   GET  /.well-known/agent-card.json  — Agent Card (A2A discovery)
  *   POST /a2a                           — A2A JSON-RPC (sendMessage, getTask, etc.)
@@ -13,12 +16,15 @@
 import express from 'express';
 import { DefaultRequestHandler, InMemoryTaskStore } from '@a2a-js/sdk/server';
 import { AgentCard } from '@a2a-js/sdk';
-import { Wallet } from 'ethers';
+import { Wallet, Contract, JsonRpcProvider } from 'ethers';
 import { AgentBExecutor } from './executor';
 
 const AGENT_B_PORT = Number(process.env.AGENT_B_PORT ?? 8081);
 const AGENT_B_PRIVATE_KEY = process.env.AGENT_B_WALLET_PRIVATE_KEY ?? '';
 const AGENT_B_ADDRESS = AGENT_B_PRIVATE_KEY ? new Wallet(AGENT_B_PRIVATE_KEY).address : '0x' + '00'.repeat(20);
+
+const VEIL_REGISTRY_ADDRESS = process.env.VEIL_REGISTRY_ADDRESS ?? '';
+const CC3_RPC_URL = process.env.CREDITCOIN_RPC_URL ?? 'https://rpc.cc3-testnet.creditcoin.network';
 
 /** Agent B's A2A Agent Card — describes capabilities for discovery. */
 const AGENT_B_CARD: AgentCard = {
@@ -122,11 +128,40 @@ export async function startAgentB(): Promise<{ port: number; close: () => Promis
   });
 
   return new Promise((resolve) => {
-    const server = app.listen(AGENT_B_PORT, () => {
+    const server = app.listen(AGENT_B_PORT, async () => {
       console.log(`[agent-b] A2A server listening on http://127.0.0.1:${AGENT_B_PORT}`);
       console.log(`[agent-b] Agent Card: http://127.0.0.1:${AGENT_B_PORT}/.well-known/agent-card.json`);
       console.log(`[agent-b] A2A endpoint: http://127.0.0.1:${AGENT_B_PORT}/a2a`);
       console.log(`[agent-b] Address: ${AGENT_B_ADDRESS}`);
+
+      // Self-register on VeilRegistry (CC3) if configured
+      if (VEIL_REGISTRY_ADDRESS && AGENT_B_PRIVATE_KEY) {
+        try {
+          const provider = new JsonRpcProvider(CC3_RPC_URL);
+          const wallet = new Wallet(AGENT_B_PRIVATE_KEY, provider);
+          const registry = new Contract(
+            VEIL_REGISTRY_ADDRESS,
+            [
+              'function registerAgent(string endpoint, string agentCardHash, bytes32 reputationRef) returns (uint256)',
+              'function isAgentActive(uint256 agentId) view returns (bool)',
+              'function listActiveAgents() view returns (uint256[])',
+            ],
+            wallet,
+          );
+          const endpoint = `http://127.0.0.1:${AGENT_B_PORT}`;
+          const cardHash = 'QmAgentB'; // placeholder — could be IPFS hash
+          const reputationRef = '0x' + '00'.repeat(32);
+          const tx = await registry.registerAgent(endpoint, cardHash, reputationRef);
+          const receipt = await tx.wait();
+          const agentId = receipt.logs?.[0]?.topics?.[1]
+            ? BigInt(receipt.logs[0].topics[1]).toString()
+            : 'unknown';
+          console.log(`[agent-b] Registered on VeilRegistry: agentId=${agentId}, tx=${receipt.hash}`);
+        } catch (err) {
+          console.warn(`[agent-b] VeilRegistry registration failed: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
       resolve({
         port: AGENT_B_PORT,
         close: () => new Promise<void>((res) => server.close(() => res())),

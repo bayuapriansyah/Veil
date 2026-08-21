@@ -1,10 +1,21 @@
 'use client';
 
-import { Robot } from '@phosphor-icons/react';
+import { Robot, Stack } from '@phosphor-icons/react';
 import Link from 'next/link';
+import { useState } from 'react';
 import { Card, PageHeader, StatusChip } from '../../../components/ui';
 import { ProviderView, VeilState, shortAddress } from '../../../lib/veil-client';
 import { usePoll } from '../../../lib/use-poll';
+
+interface RegisteredAgent {
+  agentId: number;
+  owner: string;
+  status: number;
+  endpoint: string;
+  cardHash: string;
+  registeredAt: number;
+  lastHealthCheck: number;
+}
 
 const EMPTY_STATE: VeilState = {
   agent: { address: '', status: 'active' },
@@ -30,8 +41,43 @@ export default function AgentsPage(): React.ReactElement {
     ok: true,
     providers: [],
   });
+  const { data: registryData } = usePoll<{ ok: boolean; agents: RegisteredAgent[]; registryAddress: string }>(
+    '/api/veil/registry',
+    { ok: true, agents: [], registryAddress: '' },
+  );
   const s = data.state ?? EMPTY_STATE;
   const registry = providers.providers ?? [];
+  const onChainAgents = registryData.agents ?? [];
+
+  const [regEndpoint, setRegEndpoint] = useState('');
+  const [regCardHash, setRegCardHash] = useState('');
+  const [registering, setRegistering] = useState(false);
+  const [regResult, setRegResult] = useState<string | null>(null);
+
+  async function handleRegister() {
+    if (!regEndpoint) return;
+    setRegistering(true);
+    setRegResult(null);
+    try {
+      const res = await fetch('/api/veil/registry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: regEndpoint, agentCardHash: regCardHash }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setRegResult(`Registered! agentId=${data.agentId}, tx=${data.txHash}`);
+        setRegEndpoint('');
+        setRegCardHash('');
+      } else {
+        setRegResult(`Error: ${data.error}`);
+      }
+    } catch (e) {
+      setRegResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRegistering(false);
+    }
+  }
 
   return (
     <div>
@@ -57,6 +103,82 @@ export default function AgentsPage(): React.ReactElement {
         </div>
       </Card>
 
+      {/* On-chain Agent Registry */}
+      <div className="mt-8">
+        <h2 className="mb-4 text-base font-semibold text-ink flex items-center gap-2">
+          <Stack size={18} weight="regular" /> On-chain Agent Registry (CC3)
+        </h2>
+        <div className="grid gap-5 md:grid-cols-2">
+          {onChainAgents.map((a) => (
+            <Card
+              key={a.agentId}
+              title={
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-sm">#{a.agentId}</span>
+                  <StatusChip status={a.status === 1 ? 'VERIFIED' : 'REJECTED'} label={a.status === 1 ? 'ACTIVE' : 'REVOKED'} />
+                </div>
+              }
+              right={<span className="font-mono text-xs text-mut">{shortAddress(a.owner, 6)}</span>}
+            >
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-mut">Endpoint</span>
+                  <span className="font-mono text-xs text-ink">{a.endpoint}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-mut">Registered</span>
+                  <span className="text-xs text-ink">{new Date(a.registeredAt * 1000).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-mut">Last Health</span>
+                  <span className="text-xs text-ink">{new Date(a.lastHealthCheck * 1000).toLocaleString()}</span>
+                </div>
+              </div>
+            </Card>
+          ))}
+          {onChainAgents.length === 0 && <p className="text-sm text-mut">No registered agents on-chain yet.</p>}
+        </div>
+      </div>
+
+      {/* Register Agent Form */}
+      <div className="mt-8">
+        <Card title="Register New Agent">
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm text-mut">Endpoint URL</label>
+              <input
+                type="text"
+                value={regEndpoint}
+                onChange={(e) => setRegEndpoint(e.target.value)}
+                placeholder="http://127.0.0.1:8081"
+                className="w-full rounded-lg border border-line bg-panel2 px-3 py-2 font-mono text-sm text-ink"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-mut">Agent Card Hash (optional)</label>
+              <input
+                type="text"
+                value={regCardHash}
+                onChange={(e) => setRegCardHash(e.target.value)}
+                placeholder="QmHash or IPFS URI"
+                className="w-full rounded-lg border border-line bg-panel2 px-3 py-2 font-mono text-sm text-ink"
+              />
+            </div>
+            <button
+              onClick={handleRegister}
+              disabled={registering || !regEndpoint}
+              className="rounded-lg bg-ok px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+            >
+              {registering ? 'Registering…' : 'Register Agent'}
+            </button>
+            {regResult && (
+              <p className={`text-sm ${regResult.startsWith('Error') ? 'text-fail' : 'text-ok'}`}>{regResult}</p>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* Provider agents */}
       <div className="mt-8">
         <h2 className="mb-4 text-base font-semibold text-ink">Provider agents</h2>
         <div className="grid gap-5 md:grid-cols-2">

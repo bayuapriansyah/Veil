@@ -9,6 +9,7 @@ import {SettlementEngine} from "../src/SettlementEngine.sol";
 import {ReputationEngine} from "../src/ReputationEngine.sol";
 import {IAttestationReceiver} from "../src/interfaces/IAttestationReceiver.sol";
 import {IEscrowManager} from "../src/interfaces/IEscrowManager.sol";
+import {IMandateManager} from "../src/interfaces/IMandateManager.sol";
 
 contract MockAttestationReceiver is IAttestationReceiver {
     mapping(uint256 => bool) public payments;
@@ -80,7 +81,7 @@ contract VeilFoundationTest is Test {
         escrows = new EscrowManager();
         reputation = new ReputationEngine();
         attestations = new MockAttestationReceiver();
-        settlement = new SettlementEngine(mandates, escrows, attestations, reputation);
+        settlement = new SettlementEngine(IMandateManager(address(mandates)), IEscrowManager(address(escrows)), attestations, reputation);
         mandates.setSettlementEngine(address(settlement));
         escrows.setSettlementEngine(address(settlement));
         reputation.setSettlementEngine(address(settlement));
@@ -139,7 +140,7 @@ contract VeilFoundationTest is Test {
         assertEq(mandates.remainingBudget(mandateId), 8 ether);
     }
 
-    function testFailedFulfillment() public {
+    function test_RevertWhen_FulfillmentMissing() public {
         uint256 mandateId = _createMandate(10 ether, uint64(block.timestamp + 1 days));
         uint256 orderId = 102;
         _createEscrow(orderId, mandateId, 2 ether);
@@ -201,5 +202,95 @@ contract VeilFoundationTest is Test {
         vm.prank(operator);
         vm.expectRevert();
         settlement.settle(orderId);
+    }
+
+    // --- VeilRegistry tests --- //
+
+    function testRegisterAgent() public {
+        vm.prank(user);
+        uint256 agentId = registry.registerAgent("http://127.0.0.1:8081", "QmHash123", bytes32(0));
+        assertEq(agentId, 1);
+        assertEq(registry.agentOwner(agentId), user);
+        assertEq(uint256(registry.agentStatus(agentId)), uint256(VeilRegistry.AgentStatus.Active));
+        assertEq(registry.getAgentEndpoint(agentId), "http://127.0.0.1:8081");
+        assertEq(registry.getAgentCardHash(agentId), "QmHash123");
+        assertTrue(registry.isAgentActive(agentId));
+        assertEq(registry.activeAgentCount(), 1);
+    }
+
+    function testRegisterMultipleAgents() public {
+        vm.prank(user);
+        registry.registerAgent("http://agent1.com", "card1", bytes32(0));
+        vm.prank(provider);
+        registry.registerAgent("http://agent2.com", "card2", bytes32(0));
+        assertEq(registry.activeAgentCount(), 2);
+        uint256[] memory ids = registry.listActiveAgents();
+        assertEq(ids.length, 2);
+        assertEq(ids[0], 1);
+        assertEq(ids[1], 2);
+    }
+
+    function testRevokeAgent() public {
+        vm.prank(user);
+        uint256 agentId = registry.registerAgent("http://agent.com", "card", bytes32(0));
+        vm.prank(user);
+        registry.revokeAgent(agentId);
+        assertEq(uint256(registry.agentStatus(agentId)), uint256(VeilRegistry.AgentStatus.Revoked));
+        assertFalse(registry.isAgentActive(agentId));
+        assertEq(registry.activeAgentCount(), 0);
+    }
+
+    function testCannotRevokeOthersAgent() public {
+        vm.prank(user);
+        uint256 agentId = registry.registerAgent("http://agent.com", "card", bytes32(0));
+        vm.prank(stranger);
+        vm.expectRevert(VeilRegistry.NotAgentOwner.selector);
+        registry.revokeAgent(agentId);
+    }
+
+    function testHealthCheck() public {
+        vm.prank(user);
+        uint256 agentId = registry.registerAgent("http://agent.com", "card", bytes32(0));
+        uint256 before = registry.getAgentLastHealthCheck(agentId);
+        vm.warp(block.timestamp + 100);
+        vm.prank(user);
+        registry.healthCheck(agentId);
+        assertEq(registry.getAgentLastHealthCheck(agentId), block.timestamp);
+        assertTrue(registry.getAgentLastHealthCheck(agentId) > before);
+    }
+
+    function testUpdateEndpoint() public {
+        vm.prank(user);
+        uint256 agentId = registry.registerAgent("http://old.com", "card", bytes32(0));
+        vm.prank(user);
+        registry.updateEndpoint(agentId, "http://new.com");
+        assertEq(registry.getAgentEndpoint(agentId), "http://new.com");
+    }
+
+    function testEmptyEndpointReverts() public {
+        vm.prank(user);
+        vm.expectRevert(VeilRegistry.EmptyEndpoint.selector);
+        registry.registerAgent("", "card", bytes32(0));
+    }
+
+    function testGetAgent() public {
+        vm.prank(user);
+        uint256 agentId = registry.registerAgent("http://agent.com", "QmHash", bytes32(uint256(42)));
+        (
+            address owner,
+            VeilRegistry.AgentStatus status,
+            bytes32 repRef,
+            string memory endpoint,
+            string memory cardHash,
+            uint256 registeredAt,
+            uint256 lastHealthCheck
+        ) = registry.getAgent(agentId);
+        assertEq(owner, user);
+        assertEq(uint256(status), uint256(VeilRegistry.AgentStatus.Active));
+        assertEq(repRef, bytes32(uint256(42)));
+        assertEq(endpoint, "http://agent.com");
+        assertEq(cardHash, "QmHash");
+        assertEq(registeredAt, block.timestamp);
+        assertEq(lastHealthCheck, block.timestamp);
     }
 }

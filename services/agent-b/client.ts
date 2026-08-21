@@ -4,10 +4,48 @@
  * Sends delegated tasks to Agent B via the A2A JSON-RPC protocol.
  * Used by the frontend runtime (veil-runtime.ts) to delegate procurement
  * tasks to Agent B.
+ *
+ * Supports on-chain discovery via VeilRegistry (CC3) — if AGENT_B_URL is not
+ * set, the client queries the registry for active agents and uses the first one.
  */
-import { Wallet, keccak256, toUtf8Bytes } from 'ethers';
+import { Wallet, Contract, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
 
-const AGENT_B_URL = process.env.AGENT_B_URL ?? 'http://127.0.0.1:8081';
+const AGENT_B_URL_FALLBACK = process.env.AGENT_B_URL ?? 'http://127.0.0.1:8081';
+const VEIL_REGISTRY_ADDRESS = process.env.VEIL_REGISTRY_ADDRESS ?? '';
+const CC3_RPC_URL = process.env.CREDITCOIN_RPC_URL ?? 'https://rpc.cc3-testnet.creditcoin.network';
+
+const REGISTRY_ABI = [
+  'function listActiveAgents() view returns (uint256[])',
+  'function getAgentEndpoint(uint256 agentId) view returns (string)',
+  'function getAgent(uint256 agentId) view returns (address, uint8, bytes32, string, string, uint256, uint256)',
+];
+
+/**
+ * Discover Agent B's endpoint from the on-chain VeilRegistry (CC3).
+ * Returns the endpoint URL of the first active agent, or null if none found.
+ */
+export async function discoverAgentFromRegistry(): Promise<string | null> {
+  if (!VEIL_REGISTRY_ADDRESS) return null;
+  try {
+    const provider = new JsonRpcProvider(CC3_RPC_URL);
+    const registry = new Contract(VEIL_REGISTRY_ADDRESS, REGISTRY_ABI, provider);
+    const activeIds: bigint[] = await registry.listActiveAgents();
+    if (activeIds.length === 0) return null;
+    const endpoint: string = await registry.getAgentEndpoint(activeIds[0]);
+    return endpoint || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve Agent B URL: use env var if set, otherwise discover from on-chain registry.
+ */
+export async function resolveAgentBUrl(): Promise<string> {
+  if (process.env.AGENT_B_URL) return process.env.AGENT_B_URL;
+  const discovered = await discoverAgentFromRegistry();
+  return discovered ?? AGENT_B_URL_FALLBACK;
+}
 
 export interface AgentBDelegationResult {
   ok: boolean;
@@ -32,10 +70,11 @@ export async function delegateToAgentB(
   aToBOrderId: bigint,
 ): Promise<AgentBDelegationResult> {
   const agentAddress = new Wallet(agentPrivateKey).address;
+  const agentBUrl = await resolveAgentBUrl();
 
   try {
     // A2A JSON-RPC: message/send
-    const response = await fetch(`${AGENT_B_URL}/a2a`, {
+    const response = await fetch(`${agentBUrl}/a2a`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -129,7 +168,8 @@ export async function delegateToAgentB(
  */
 export async function checkAgentBHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${AGENT_B_URL}/health`);
+    const url = await resolveAgentBUrl();
+    const res = await fetch(`${url}/health`);
     if (!res.ok) return false;
     const data = await res.json();
     return data.ok === true;
