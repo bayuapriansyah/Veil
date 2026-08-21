@@ -14,11 +14,12 @@
 import { AuditVault } from '../../services/audit/vault';
 import { loadVaultKey } from '../../services/audit/crypto';
 import { signAuditAccess, verifyAuditAccess } from '../../services/audit/signer';
-import { Wallet } from 'ethers';
+import { Wallet, keccak256, toUtf8Bytes } from 'ethers';
 import { SERVICE_COMPUTE, SERVICE_MARKET_DATA } from '../../services/provider/adapter';
 import { createProcurementShop, OPERATOR, PROVIDER } from '../../services/procurement/shop';
 import { ProcurementAgent } from '../../services/procurement/agent';
 import { isDemoMode, resolveVeilMode, type VeilMode } from '../../services/config/mode';
+import { recordFulfillment } from '../../services/attestation/record';
 
 export const PRICE_ATOMS = BigInt('1000000000000000'); // 0.001 per call
 export const BUDGET_ATOMS = PRICE_ATOMS * 40n;
@@ -45,6 +46,8 @@ export interface RuntimeOrder {
   escrowStatus: 'None' | 'Locked' | 'Released' | 'Refunded';
   /** Live source-chain AgentPayment tx hash, when the on-chain record succeeded. */
   onchainRecordTxHash?: string;
+  /** Live source-chain FulfillmentReceipt tx hash (provider-signed), when recorded. */
+  fulfillmentTxHash?: string;
   stages: TimelineStage[];
 }
 
@@ -105,6 +108,8 @@ class VeilRuntime {
   orders: RuntimeOrder[] = [];
   auditorKey = '0x' + 'aa'.repeat(32); // demo auditor wallet (runtime-side, not shipped as a secret)
   keySource = 'ephemeral';
+  /** The on-chain-capable provider (real signing wallet in production). */
+  providerAddress = PROVIDER;
   private started = false;
 
   async start(): Promise<void> {
@@ -119,15 +124,25 @@ class VeilRuntime {
     const agentWallet = demo
       ? Wallet.createRandom()
       : new Wallet(process.env.SOURCE_CHAIN_WALLET_PRIVATE_KEY ?? Wallet.createRandom().privateKey);
+    // Production provider identity = the wallet that signs on-chain fulfillments.
+    this.providerAddress = process.env.VEIL_PROVIDER_ADDRESS && /^0x[0-9a-fA-F]{40}$/.test(process.env.VEIL_PROVIDER_ADDRESS)
+      ? process.env.VEIL_PROVIDER_ADDRESS
+      : PROVIDER;
     const { shop, close } = await createProcurementShop({
       operator: OPERATOR,
       agentPrivateKey: agentWallet.privateKey,
       agentAddress: agentWallet.address,
       // Start auto-assigned order ids high so restarts never collide with
       // already-recorded on-chain AgentPayment events (soft-fail avoided).
-      orderIdSeed: 500_000n,
+      // 600000 was already recorded + proven on Creditcoin; the next live
+      // settlement run uses 601000+. Agent-to-agent reserves 700_000n+.
+      orderIdSeed: 601_000n,
       providers: [
-        { address: PROVIDER, reputation: 5, services: [{ serviceId: SERVICE_MARKET_DATA, name: 'Market Data Feed', description: 'Real-time market data (per-call)', pricePerCallAtoms: PRICE_ATOMS }] },
+        // Provider[0] is the ON-CHAIN provider: in production its address comes
+        // from VEIL_PROVIDER_ADDRESS and its key from SOURCE_CHAIN_PROVIDER_PRIVATE_KEY,
+        // so it can sign the live FulfillmentReceipt (VeilSource.recordFulfillment
+        // is onlyProvider-guarded). In demo it falls back to the fixed mirror key.
+        { address: this.providerAddress, reputation: 5, services: [{ serviceId: SERVICE_MARKET_DATA, name: 'Market Data Feed', description: 'Real-time market data (per-call)', pricePerCallAtoms: PRICE_ATOMS }] },
         { address: '0x' + '44'.repeat(20), reputation: 5, services: [{ serviceId: SERVICE_MARKET_DATA, name: 'Market Data Feed', description: 'High-priced redundant feed', pricePerCallAtoms: PRICE_ATOMS * 3n }] },
         { address: '0x' + '55'.repeat(20), reputation: 2, services: [{ serviceId: SERVICE_MARKET_DATA, name: 'Market Data Feed', description: 'Untrusted feed', pricePerCallAtoms: PRICE_ATOMS }] },
       ],
@@ -174,6 +189,21 @@ class VeilRuntime {
       payloadRef: SERVICE_MARKET_DATA,
     });
 
+    // Record the live FulfillmentReceipt on Sepolia, SIGNED BY THE PROVIDER
+    // (VeilSource.recordFulfillment is onlyProvider-guarded, so the provider
+    // wallet — not the agent — must sign). Soft-fail: the mirror ledger stays
+    // authoritative for the UI. The Attestcoin worker proves this block next,
+    // giving the SettlementEngine both facts to settle on Creditcoin.
+    const fulfillmentTx = await recordFulfillment(
+      {
+        orderId,
+        resultHash: resultHash ?? '0x' + '0'.repeat(64),
+        serviceId: outcome.serviceId!,
+        transactionRef: keccak256(toUtf8Bytes(`${orderId}`)),
+      },
+      process.env.SOURCE_CHAIN_PROVIDER_PRIVATE_KEY,
+    ).catch((err: unknown) => ({ ok: false, error: String((err as Error)?.message ?? err) }));
+
     const order: RuntimeOrder = {
       orderId: outcome.orderId,
       serviceId: outcome.serviceId!,
@@ -185,6 +215,7 @@ class VeilRuntime {
       resultHash,
       escrowStatus: escrowStatus === 2 ? 'Released' : escrowStatus === 1 ? 'Locked' : escrowStatus === 3 ? 'Refunded' : 'None',
       onchainRecordTxHash: onchainTxHashOf(outcome),
+      fulfillmentTxHash: fulfillmentTx.ok && 'txHash' in fulfillmentTx ? fulfillmentTx.txHash : undefined,
       stages: successStages(settle.ok ? 'SETTLED' : 'PENDING'),
     };
     this.orders.unshift(order);
@@ -230,7 +261,7 @@ class VeilRuntime {
           expiresAt: this.currentMandateExpiry(),
         },
         paymentEvidence: { orderId: order.orderId, paymentVerified: true, scheme: 'veil-exact', recordedAt: order.createdAt },
-        fulfillmentEvidence: { resultHash: order.resultHash ?? '0x0', fulfillmentVerified: true, recordedAt: order.createdAt + 1 },
+        fulfillmentEvidence: { resultHash: order.resultHash ?? '0x0', fulfillmentVerified: true, fulfillmentTx: order.fulfillmentTxHash, recordedAt: order.createdAt + 1 },
         attestationEvidence,
         settlementEvidence: { escrowStatus: order.escrowStatus, settlementRef: order.resultHash ?? '0x0', recordedAt: order.createdAt + 3 },
       },
@@ -289,7 +320,7 @@ class VeilRuntime {
       spentAtoms: spent.toString(),
       remainingAtoms: (budget - spent).toString(),
       reservedAtoms: this.reserved().toString(),
-      reputation: { provider: PROVIDER, score: this.shop ? this.shop.reputationOf(PROVIDER) : 5, reviews: 1 },
+      reputation: { provider: this.providerAddress, score: this.shop ? this.shop.reputationOf(this.providerAddress) : 5, reviews: 1 },
       verifiedTransactions: verified,
       transactionCount: this.orders.length,
       currentMandate: this.currentMandate(),
@@ -317,7 +348,7 @@ class VeilRuntime {
 
   currentMandate(): MandatePublic | null {
     if (!this.shop) return null;
-    const ledger = this.shop.ledgerOf(PROVIDER);
+    const ledger = this.shop.ledgerOf(this.providerAddress);
     if (!ledger) return null;
     const active = ledger.activeMandateOf(OPERATOR, SERVICE_MARKET_DATA);
     const fallback = active ?? (ledger as unknown as { mandates: Map<number, { mandateId: number; owner: string; serviceId: string; budget: bigint; spent: bigint; expiresAt: number; revoked: boolean }> }).mandates.values().next().value;

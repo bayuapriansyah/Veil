@@ -50,6 +50,8 @@ export interface EvidenceBundle {
     resultHash: string;
     fulfillmentVerified: boolean;
     recordedAt: number;
+    /** Live source-chain FulfillmentReceipt tx hash (provider-signed), when recorded. */
+    fulfillmentTx?: string;
   };
   attestation: {
     /** Cross-chain reference (Creditcoin ASC / AttestationReceiver, or the source-chain tx). */

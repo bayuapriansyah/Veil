@@ -51,13 +51,16 @@ export function isOnchainRecordEnabled(env: SourceChainEnv = sourceChainEnv()): 
  * Record an AgentPayment on the live VeilSource contract (soft-fail).
  * Returns the transaction hash on success, or a reason string on failure.
  */
-export async function recordAgentPayment(opts: {
-  orderId: bigint;
-  provider: string;
-  amount: bigint;
-  serviceId: string;
-  transactionRef: string;
-}): Promise<OnchainRecordResult> {
+export async function recordAgentPayment(
+  opts: {
+    orderId: bigint;
+    provider: string;
+    amount: bigint;
+    serviceId: string;
+    transactionRef: string;
+  },
+  signerPrivateKey?: string,
+): Promise<OnchainRecordResult> {
   const env = sourceChainEnv();
   if (isDemoMode()) {
     // Demo mode never touches an RPC: wallets are generated, so there is
@@ -69,7 +72,7 @@ export async function recordAgentPayment(opts: {
   }
   try {
     const provider = new JsonRpcProvider(env.rpcUrl);
-    const wallet = new Wallet(env.privateKey, provider);
+    const wallet = new Wallet(signerPrivateKey ?? env.privateKey, provider);
     const contract = new Contract(env.contractAddress, SOURCE_ABI, wallet);
     const tx = await contract.recordAgentPayment(
       opts.orderId,
@@ -97,12 +100,20 @@ export async function recordAgentPayment(opts: {
  * Record a FulfillmentReceipt on the live VeilSource contract (soft-fail).
  * Only the provider recorded for the order may call this on-chain.
  */
-export async function recordFulfillment(opts: {
-  orderId: bigint;
-  resultHash: string;
-  serviceId: string;
-  transactionRef: string;
-}): Promise<OnchainRecordResult> {
+/**
+ * Record a FulfillmentReceipt on the live VeilSource contract (soft-fail).
+ * Only the provider recorded for the order may call this on-chain — pass the
+ * provider's private key as `signerPrivateKey` (defaults to the agent key).
+ */
+export async function recordFulfillment(
+  opts: {
+    orderId: bigint;
+    resultHash: string;
+    serviceId: string;
+    transactionRef: string;
+  },
+  signerPrivateKey?: string,
+): Promise<OnchainRecordResult> {
   const env = sourceChainEnv();
   if (isDemoMode()) {
     return { ok: false, error: 'demo mode — on-chain recording disabled (mirror)' };
@@ -112,7 +123,7 @@ export async function recordFulfillment(opts: {
   }
   try {
     const provider = new JsonRpcProvider(env.rpcUrl);
-    const wallet = new Wallet(env.privateKey, provider);
+    const wallet = new Wallet(signerPrivateKey ?? env.privateKey, provider);
     const contract = new Contract(env.contractAddress, SOURCE_ABI, wallet);
     const tx = await contract.recordFulfillment(
       opts.orderId,
