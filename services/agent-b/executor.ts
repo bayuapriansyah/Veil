@@ -5,11 +5,14 @@
  * services from Shop C using its own wallet (on-chain AgentPayment +
  * FulfillmentReceipt on Sepolia), and returns the result.
  *
+ * CRITICAL: Verifies Agent A's signature before executing. This proves the
+ * delegation message came from a specific on-chain agent, not an impersonator.
+ *
  * Agent B is BOTH:
  *   - Provider for A→B (can sign FulfillmentReceipt as onlyProvider)
  *   - Agent for B→C (signs AgentPayment on Sepolia)
  */
-import { Wallet, keccak256, toUtf8Bytes } from 'ethers';
+import { Wallet, Contract, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
 import { AgentExecutor, RequestContext, ExecutionEventBus, AgentEvent } from '@a2a-js/sdk/server';
 import { TaskState } from '@a2a-js/sdk';
 import { createProcurementShop, OPERATOR } from '../procurement/shop';
@@ -31,6 +34,37 @@ export interface AgentBResult {
   bToCPaymentTx?: string;
   /** On-chain A→B FulfillmentReceipt tx hash (Sepolia, provider-signed). */
   aToBFulfillmentTx?: string;
+  /** Agent A's verified wallet address (from signature). */
+  verifiedAgent?: string;
+}
+
+/**
+ * Verify Agent A's delegation signature.
+ * Returns the verified agent address if valid, or null if invalid.
+ *
+ * The signed payload must match: { type, orderId, agent, task, timestamp }
+ * and must be signed by the agent address claimed in the payload.
+ */
+async function verifyDelegationSignature(
+  payload: string,
+  signature: string,
+): Promise<string | null> {
+  try {
+    const parsed = JSON.parse(payload);
+    if (parsed.type !== 'a2a-delegation') return null;
+    if (!parsed.agent || !parsed.orderId || !parsed.timestamp) return null;
+
+    // Recover the signer from the signed hash
+    const payloadHash = keccak256(toUtf8Bytes(payload));
+    const recoveredAddress = Wallet.verifyMessage(payloadHash, signature);
+
+    // The recovered address must match the claimed agent address
+    if (recoveredAddress.toLowerCase() !== parsed.agent.toLowerCase()) return null;
+
+    return parsed.agent;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -144,11 +178,36 @@ export class AgentBExecutor implements AgentExecutor {
       return;
     }
 
-    // Extract A→B order ID from metadata or generate one
+    // Extract metadata
     const aToBOrderId = BigInt(
       requestContext.userMessage.metadata?.aToBOrderId ?? '800000'
     );
     const aToBAgent = (requestContext.userMessage.metadata?.agent as string) ?? AGENT_B_ADDRESS;
+
+    // CRITICAL: Verify Agent A's delegation signature before executing.
+    // This proves the message came from a specific on-chain agent.
+    const delegationPayload = requestContext.userMessage.metadata?.delegationPayload as string | undefined;
+    const delegationSignature = requestContext.userMessage.metadata?.delegationSignature as string | undefined;
+
+    let verifiedAgent: string | null = null;
+    if (delegationPayload && delegationSignature) {
+      verifiedAgent = await verifyDelegationSignature(delegationPayload, delegationSignature);
+      if (!verifiedAgent) {
+        eventBus.publish(AgentEvent.task({
+          id: requestContext.taskId,
+          contextId: requestContext.contextId,
+          status: {
+            state: TaskState.FAILED,
+            message: { role: 'agent', parts: [{ text: 'Invalid delegation signature — agent identity not verified' }] },
+          },
+        }));
+        eventBus.finished();
+        return;
+      }
+      console.log(`[agent-b] Verified delegation from agent: ${verifiedAgent}`);
+    } else {
+      console.warn(`[agent-b] No delegation signature provided — proceeding without verification`);
+    }
 
     // Publish a task event to acknowledge receipt
     eventBus.publish(AgentEvent.task({
@@ -158,7 +217,7 @@ export class AgentBExecutor implements AgentExecutor {
     }));
 
     try {
-      const result = await executeDelegatedTask(task, aToBOrderId, aToBAgent);
+      const result = await executeDelegatedTask(task, aToBOrderId, verifiedAgent ?? aToBAgent);
 
       // Publish the final result
       eventBus.publish(AgentEvent.task({
@@ -175,6 +234,7 @@ export class AgentBExecutor implements AgentExecutor {
                 provider: result.provider,
                 bToCPaymentTx: result.bToCPaymentTx,
                 aToBFulfillmentTx: result.aToBFulfillmentTx,
+                verifiedAgent: verifiedAgent ?? aToBAgent,
                 error: result.error,
               }),
             }],

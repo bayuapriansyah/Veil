@@ -20,7 +20,7 @@ import { createProcurementShop, OPERATOR, PROVIDER } from '../../services/procur
 import { ProcurementAgent } from '../../services/procurement/agent';
 import { isDemoMode, resolveVeilMode, type VeilMode } from '../../services/config/mode';
 import { recordAgentPayment, recordFulfillment } from '../../services/attestation/record';
-import { delegateToAgentB, checkAgentBHealth, type AgentBDelegationResult } from '../../services/agent-b/client';
+import { delegateToAgentB, checkAgentBHealth, resolveAgentBAddress, resolveAgentBUrl, type AgentBDelegationResult } from '../../services/agent-b/client';
 
 export const PRICE_ATOMS = BigInt('1000000000000000'); // 0.001 per call
 export const BUDGET_ATOMS = PRICE_ATOMS * 40n;
@@ -229,10 +229,17 @@ class VeilRuntime {
   /**
    * Delegate a procurement task to Agent B via A2A.
    * Agent B buys from Shop C on-chain and fulfills A→B on-chain.
+   *
+   * CRITICAL: Agent B's wallet address is resolved from the on-chain registry,
+   * NOT hardcoded. This ensures A→B payment goes to the correct agent.
    */
   async delegateToB(task: string): Promise<{ ok: boolean; orderId?: string; reason?: string; delegation?: AgentBDelegationResult }> {
     await this.start();
     if (this.killSwitch) return { ok: false, reason: 'kill switch engaged' };
+
+    // Resolve Agent B address from on-chain registry (NOT hardcoded)
+    const agentBAddress = await resolveAgentBAddress();
+    if (!agentBAddress) return { ok: false, reason: 'Agent B not found in on-chain registry' };
 
     // Check Agent B is reachable
     const healthy = await checkAgentBHealth();
@@ -243,15 +250,16 @@ class VeilRuntime {
 
     // Record A→B AgentPayment on Sepolia (signed by Agent A = agent).
     // This creates the on-chain order that Agent B will fulfill as provider.
+    // Provider address comes from registry — NOT hardcoded.
     const aToBPayment = await recordAgentPayment({
       orderId: aToBOrderId,
-      provider: '0x' + '42'.repeat(20), // Agent B's address
+      provider: agentBAddress,
       amount: BigInt('1000000000000000'),
       serviceId: SERVICE_MARKET_DATA,
       transactionRef: keccak256(toUtf8Bytes(`${aToBOrderId}`)),
     }).catch((err: unknown) => ({ ok: false, error: String((err as Error)?.message ?? err) }));
 
-    // Delegate to Agent B via A2A
+    // Delegate to Agent B via A2A (include signed message for verification)
     const delegation = await delegateToAgentB(task, this.shop.agentPrivateKey, aToBOrderId);
 
     if (!delegation.ok) {
@@ -270,7 +278,7 @@ class VeilRuntime {
       attestationStatus: 'a2a-delegation',
       protectedData: {
         agent: this.shop.agentAddress,
-        provider: '0x' + '42'.repeat(20), // Agent B
+        provider: agentBAddress,
         amountAtoms: '0',
         amountUsd: '0',
         authorization: {
@@ -296,7 +304,7 @@ class VeilRuntime {
       orderId: String(aToBOrderId),
       serviceId: SERVICE_MARKET_DATA,
       serviceLabel: 'A2A Delegation → Agent B',
-      provider: '0x' + '42'.repeat(20),
+      provider: agentBAddress,
       amountAtoms: '0',
       ok: true,
       createdAt: now,

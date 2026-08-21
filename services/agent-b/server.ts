@@ -26,10 +26,13 @@ const AGENT_B_ADDRESS = AGENT_B_PRIVATE_KEY ? new Wallet(AGENT_B_PRIVATE_KEY).ad
 const VEIL_REGISTRY_ADDRESS = process.env.VEIL_REGISTRY_ADDRESS ?? '';
 const CC3_RPC_URL = process.env.CREDITCOIN_RPC_URL ?? 'https://rpc.cc3-testnet.creditcoin.network';
 
+// Agent B's on-chain identity (populated at registration)
+let agentBRegistryId: number | null = null;
+
 /** Agent B's A2A Agent Card — describes capabilities for discovery. */
 const AGENT_B_CARD: AgentCard = {
   name: 'VEIL Agent B',
-  description: 'A procurement agent that buys verified market-data services from Shop C on behalf of delegating agents. Accepts delegated tasks via A2A protocol, executes purchases on-chain, and returns verified results.',
+  description: `Procurement agent (wallet: ${AGENT_B_ADDRESS}). Buys verified market-data services from Shop C on behalf of delegating agents. Accepts delegated tasks via A2A protocol, executes purchases on-chain, and returns verified results.`,
   url: `http://127.0.0.1:${AGENT_B_PORT}`,
   version: '1.0.0',
   capabilities: {
@@ -124,6 +127,8 @@ export async function startAgentB(): Promise<{ port: number; close: () => Promis
       agent: 'B',
       address: AGENT_B_ADDRESS,
       port: AGENT_B_PORT,
+      registryId: agentBRegistryId,
+      registryAddress: VEIL_REGISTRY_ADDRESS || undefined,
     });
   });
 
@@ -145,6 +150,7 @@ export async function startAgentB(): Promise<{ port: number; close: () => Promis
               'function registerAgent(string endpoint, string agentCardHash, bytes32 reputationRef) returns (uint256)',
               'function isAgentActive(uint256 agentId) view returns (bool)',
               'function listActiveAgents() view returns (uint256[])',
+              'function agentOwner(uint256 agentId) view returns (address)',
             ],
             wallet,
           );
@@ -153,10 +159,9 @@ export async function startAgentB(): Promise<{ port: number; close: () => Promis
           const reputationRef = '0x' + '00'.repeat(32);
           const tx = await registry.registerAgent(endpoint, cardHash, reputationRef);
           const receipt = await tx.wait();
-          const agentId = receipt.logs?.[0]?.topics?.[1]
-            ? BigInt(receipt.logs[0].topics[1]).toString()
-            : 'unknown';
-          console.log(`[agent-b] Registered on VeilRegistry: agentId=${agentId}, tx=${receipt.hash}`);
+          const rawId = receipt.logs?.[0]?.topics?.[1];
+          agentBRegistryId = rawId ? Number(BigInt(rawId)) : null;
+          console.log(`[agent-b] Registered on VeilRegistry: agentId=${agentBRegistryId}, wallet=${AGENT_B_ADDRESS}, tx=${receipt.hash}`);
         } catch (err) {
           console.warn(`[agent-b] VeilRegistry registration failed: ${err instanceof Error ? err.message : err}`);
         }
