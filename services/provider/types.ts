@@ -141,3 +141,25 @@ export interface SettlementStateProvider {
   release?(orderId: bigint): void;
   refund?(orderId: bigint): void;
 }
+
+/**
+ * Full ledger type used by VeilProvider and shop — extends SettlementStateProvider
+ * with write methods (createMandate, createEscrow, charge, etc.) needed by
+ * the provider server and procurement layer.
+ */
+export interface VeilLedger extends SettlementStateProvider {
+  findActiveMandate(owner: string, serviceId: string): { mandateId: number; budget: bigint; spent: bigint } | undefined;
+  createMandate(opts: unknown): { mandateId: number };
+  createEscrow(opts: unknown): unknown;
+  charge(opts: unknown): void;
+  markPaymentVerified(orderId: bigint, amount: bigint, serviceId: string, agent: string): void;
+  markFulfillmentVerified(orderId: bigint): void;
+  recordOrderSupplement(orderId: bigint, supplement: unknown): void;
+  activeMandates(): Array<{ mandateId: number; owner: string; agentId: number; budget: bigint; serviceId: string; expiresAt: number; revoked: boolean; spent: bigint }>;
+  escrow(orderId: bigint): { status: number; provider?: string; payer?: string; mandateId?: number; amount?: bigint } | undefined;
+  orderSupplement(orderId: bigint): { serviceName: string; serviceDescription: string; providerReputation: number } | undefined;
+  registerReputation(provider: string, score: number): void;
+  revokeMandate(mandateId: number, caller: string): void;
+  release(orderId: bigint): void;
+  refund(orderId: bigint): void;
+}

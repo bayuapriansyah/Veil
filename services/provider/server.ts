@@ -28,9 +28,12 @@ import { AddressInfo } from 'node:net';
 import { keccak256, toUtf8Bytes } from 'ethers';
 
 import { VeilAdapter, SERVICE_MARKET_DATA, VeilPaymentDomain } from './adapter';
-import { SettlementLedger, EscrowStatus } from './ledger';
-import { VerifyPaymentResult, X402PaymentRequired } from './types';
+import { SettlementLedger, EscrowStatus, Mandate, Escrow, OrderSupplement } from './ledger';
+import { SettlementStateProvider, VeilLedger, VerifyPaymentResult, X402PaymentRequired } from './types';
 import { verifyExactPayment, buildUsdcRequirement } from './x402';
+import { MarketDataSource, MarketDataResult, createMarketDataSource } from './market-data-source';
+import { isProductionMode } from '../config/mode';
+import { OnChainStateProvider, loadOnChainStateProviderConfig } from './onchain-ledger';
 
 export interface MarketDataOptions {
   symbol?: string;
@@ -64,6 +67,10 @@ export interface ProviderOptions {
   catalog?: ServiceInfo[];
   /** Provider star rating 1-5; 0 = unrated. Providers scoring < 3 are excluded. */
   reputation?: number;
+  /** Settlement state provider (demo ledger or on-chain contracts). */
+  ledger?: SettlementStateProvider;
+  /** Market data source (mock or real API). */
+  marketSource?: MarketDataSource;
 }
 
 export function base64Json(value: unknown): string {
@@ -81,8 +88,9 @@ export function decodeBase64Json<T>(header: string | undefined): T | null {
 
 export class VeilProvider {
   adapter: VeilAdapter;
-  ledger: SettlementLedger;
-  opts: Required<Omit<ProviderOptions, 'usdc'>> & Pick<ProviderOptions, 'usdc'>;
+  ledger: VeilLedger;
+  marketSource: MarketDataSource;
+  opts: Required<Omit<ProviderOptions, 'usdc' | 'ledger' | 'marketSource'>> & Pick<ProviderOptions, 'usdc' | 'ledger' | 'marketSource'>;
 
   constructor(opts: ProviderOptions) {
     this.opts = {
@@ -92,9 +100,12 @@ export class VeilProvider {
       catalog: [DEFAULT_SERVICE],
       ...opts,
     };
-    this.ledger = new SettlementLedger();
-    this.adapter = new VeilAdapter({ providerAddress: opts.providerAddress, ledger: this.ledger });
+    // Use injected ledger or create a new SettlementLedger (demo mode).
+    this.ledger = (opts.ledger ?? new SettlementLedger()) as typeof this.ledger;
+    this.adapter = new VeilAdapter({ providerAddress: opts.providerAddress, ledger: this.ledger as SettlementStateProvider });
     if (this.opts.reputation) this.ledger.registerReputation(this.opts.providerAddress, this.opts.reputation);
+    // Use injected market source or create one from env config.
+    this.marketSource = opts.marketSource ?? createMarketDataSource(opts.providerAddress);
   }
 
   /** Services offered by this provider (resolved defaults applied). */
@@ -197,13 +208,18 @@ export class VeilProvider {
 
   // --- resource handlers -------------------------------------------------- //
 
-  marketData(symbol = 'ETH/USD'): Record<string, unknown> {
-    return {
-      symbol,
-      price: '2.42',
-      updatedAt: new Date().toISOString(),
-      provider: this.opts.providerAddress,
-    };
+  async marketData(symbol = 'ETH/USD'): Promise<MarketDataResult> {
+    try {
+      return await this.marketSource.getMarketData(symbol);
+    } catch {
+      // Fallback to static data if market source fails
+      return {
+        symbol,
+        price: '2.42',
+        updatedAt: new Date().toISOString(),
+        provider: this.opts.providerAddress,
+      };
+    }
   }
 
   /**
@@ -324,7 +340,7 @@ export function createVeilServer(opts: ProviderOptions) {
           return json(res, gate.status, { error: gate.error, x402Version: 2 }, gate.headers);
         }
         const symbol = query === undefined ? 'ETH/USD' : new URLSearchParams(query.replace(/^\?/, '')).get('symbol') ?? 'ETH/USD';
-        const data = provider.marketData(symbol);
+        const data = await provider.marketData(symbol);
         const fulfillment = await provider.fulfill(gate.orderId, opts.providerAddress, SERVICE_MARKET_DATA);
         const paymentResponse = { success: true, orderId: gate.orderId.toString(), resultHash: fulfillment.resultHash };
         return json(res, 200, data, { 'PAYMENT-RESPONSE': base64Json(paymentResponse) });
@@ -460,7 +476,20 @@ if (require.main === module) {
   const operatorAddress = process.env.PROVIDER_OPERATOR_ADDRESS ?? '0x' + '11'.repeat(20);
   const providerAddress = process.env.VEIL_PROVIDER_ADDRESS ?? '0x' + '22'.repeat(20);
   const port = Number(process.env.PROVIDER_PORT ?? 8080);
-  startProvider({ providerAddress, operatorAddress, advertiseRealX402: true }, port).then(({ server }) => {
+
+  const opts: ProviderOptions = { providerAddress, operatorAddress, advertiseRealX402: true };
+
+  if (isProductionMode()) {
+    const config = loadOnChainStateProviderConfig();
+    if (config) {
+      console.log('Production mode: using OnChainStateProvider for verification');
+      opts.ledger = new OnChainStateProvider(config);
+    } else {
+      console.warn('Production mode detected but config incomplete — falling back to demo ledger');
+    }
+  }
+
+  startProvider(opts, port).then(({ server }) => {
     console.log(`VEIL provider listening on http://127.0.0.1:${port}`);
     console.log(`advertised schemes: veil-exact (VEIL demo adapter), exact (real x402, verification-only)`);
   });

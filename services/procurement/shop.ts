@@ -12,9 +12,8 @@ import { AddressInfo } from 'node:net';
 import { Wallet, keccak256, toUtf8Bytes } from 'ethers';
 
 import { SERVICE_MARKET_DATA, signVeilPayment, VeilPaymentDomain } from '../provider/adapter';
-import { SettlementLedger } from '../provider/ledger';
 import { VeilProvider, createVeilServer, base64Json, ProviderOptions, ServiceInfo } from '../provider/server';
-import { X402PaymentRequired } from '../provider/types';
+import { VeilLedger, X402PaymentRequired } from '../provider/types';
 import { recordAgentPayment } from '../attestation/record';
 import {
   MandateView,
@@ -166,12 +165,12 @@ export class ProcurementShop {
     return this.handles.get(provider.toLowerCase())?.provider;
   }
 
-  ledgerOf(provider: string): SettlementLedger | undefined {
+  ledgerOf(provider: string): VeilLedger | undefined {
     return this.handles.get(provider.toLowerCase())?.provider.ledger;
   }
 
   /** Every provider ledger in the shop (each is the authority for its purchases). */
-  ledgers(): Array<{ provider: string; ledger: SettlementLedger }> {
+  ledgers(): Array<{ provider: string; ledger: VeilLedger }> {
     return [...this.handles.entries()].map(([, h]) => ({ provider: h.provider.opts.providerAddress, ledger: h.provider.ledger }));
   }
 
@@ -265,8 +264,8 @@ export class ProcurementShop {
     };
   }
 
-  reputationOf(provider: string): number {
-    return this.handles.get(provider.toLowerCase())?.provider.ledger.getReputation(provider) ?? 0;
+  async reputationOf(provider: string): Promise<number> {
+    return await this.handles.get(provider.toLowerCase())?.provider.ledger.reputationOf(provider) ?? 0;
   }
 
   // --- purchasing (the ONLY payment path) --------------------------------- //

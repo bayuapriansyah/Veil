@@ -18,7 +18,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SERVICE_COMPUTE, SERVICE_MARKET_DATA } from '../provider/adapter';
-import { SettlementLedger } from '../provider/ledger';
+import { VeilLedger } from '../provider/types';
 import { VeilProvider } from '../provider/server';
 import { ProcurementAgent } from './agent';
 import { createProcurementShop, OPERATOR, PROVIDER, ProcurementShop, ShopService } from './shop';
@@ -31,7 +31,7 @@ export interface ProcurementHarness {
   shop: ProcurementShop;
   agent: ProcurementAgent;
   provider: VeilProvider;
-  ledger: SettlementLedger;
+  ledger: VeilLedger;
   operator: string;
   close: () => Promise<void>;
 }
@@ -89,7 +89,7 @@ describe('VEIL procurement agent', () => {
       // The purchase reserves exactly PRICE in escrow; budget is committed on release.
       const escrow = h.ledger.escrow(1189n)!;
       assert.equal(escrow.amount, PRICE);
-      assert.equal(escrow.payer.toLowerCase(), h.shop.agentAddress.toLowerCase());
+      assert.equal(escrow.payer!.toLowerCase(), h.shop.agentAddress.toLowerCase());
       let mandate = h.ledger.findActiveMandate(OPERATOR, SERVICE_MARKET_DATA)!;
       assert.equal(mandate.spent, 0n); // nothing released yet — ledger still holds authority
 
