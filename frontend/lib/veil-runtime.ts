@@ -181,8 +181,8 @@ class VeilRuntime {
     // Real operator settlement through the VEIL rail (mirrors SettlementEngine).
     const orderId = BigInt(outcome.orderId);
     const handle = this.shop.handleOf(outcome.provider!);
-    const settle = handle?.provider.settle(orderId, OPERATOR) ?? { ok: false, error: 'ProviderUnknown' };
-    const escrowStatus = handle?.provider.ledger.escrowStatus(orderId) ?? 0;
+    const settle = (await handle?.provider.settle(orderId, OPERATOR)) ?? { ok: false, error: 'ProviderUnknown' };
+    const escrowStatus = (await handle?.provider.ledger.escrowStatus(orderId)) ?? 0;
     const resultHash = handle?.provider.adapter.computeResultHash({
       orderId,
       serviceId: outcome.serviceId!,
@@ -443,7 +443,7 @@ class VeilRuntime {
     if (!this.shop) return null;
     const ledger = this.shop.ledgerOf(this.providerAddress);
     if (!ledger) return null;
-    const active = ledger.activeMandateOf(OPERATOR, SERVICE_MARKET_DATA);
+    const active = ledger.findActiveMandate(OPERATOR, SERVICE_MARKET_DATA);
     const fallback = active ?? (ledger as unknown as { mandates: Map<number, { mandateId: number; owner: string; serviceId: string; budget: bigint; spent: bigint; expiresAt: number; revoked: boolean }> }).mandates.values().next().value;
     const m = active ?? fallback;
     if (!m) return null;

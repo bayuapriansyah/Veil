@@ -15,12 +15,10 @@
  * It is NOT the deployed contract. When the live chain is available, the
  * provider/service must call the real contracts instead.
  */
-export enum EscrowStatus {
-  None = 0,
-  Locked = 1,
-  Released = 2,
-  Refunded = 3,
-}
+import { SettlementStateProvider, EscrowStatus } from './types';
+
+// Re-export from types.ts for backward compatibility
+export { EscrowStatus } from './types';
 
 export interface Escrow {
   orderId: bigint;
@@ -70,7 +68,10 @@ export function zeroBytes32(): string {
   return '0x' + '00'.repeat(32);
 }
 
-export class SettlementLedger {
+/**
+ * In-memory settlement ledger — implements `SettlementStateProvider`.
+ */
+export class SettlementLedger implements SettlementStateProvider {
   private escrows = new Map<string, Escrow>();
   private mandates = new Map<number, Mandate>();
   private paymentsVerified = new Map<string, boolean>();
@@ -130,7 +131,7 @@ export class SettlementLedger {
   // --- Mandate discovery (used by the procurement agent) ------------------ //
 
   /** First active mandate of `owner` covering `serviceId` (not revoked, not expired). */
-  activeMandateOf(owner: string, serviceId: string): Mandate | undefined {
+  findActiveMandate(owner: string, serviceId: string): Mandate | undefined {
     const now = Date.now() / 1000;
     for (const m of this.mandates.values()) {
       if (m.owner.toLowerCase() !== owner.toLowerCase()) continue;
@@ -155,7 +156,7 @@ export class SettlementLedger {
   }
 
   /** Star rating 1-5; 0 when the provider is unrated. */
-  reputationOf(provider: string): number {
+  getReputation(provider: string): number {
     return this.reputations.get(provider.toLowerCase())?.score ?? 0;
   }
 
@@ -219,11 +220,6 @@ export class SettlementLedger {
     escrow.status = EscrowStatus.Refunded;
   }
 
-  escrowStatus(orderId: bigint): EscrowStatus {
-    const escrow = this.escrows.get(orderId.toString());
-    return escrow ? escrow.status : EscrowStatus.None;
-  }
-
   escrow(orderId: bigint): Escrow | undefined {
     return this.escrows.get(orderId.toString());
   }
@@ -247,16 +243,36 @@ export class SettlementLedger {
     this.fulfillmentsVerified.set(orderId.toString(), true);
   }
 
-  isPaymentVerified(orderId: bigint): boolean {
+  async isPaymentVerified(orderId: bigint): Promise<boolean> {
     return this.paymentsVerified.get(orderId.toString()) === true;
   }
 
-  isFulfillmentVerified(orderId: bigint): boolean {
+  async isFulfillmentVerified(orderId: bigint): Promise<boolean> {
     return this.fulfillmentsVerified.get(orderId.toString()) === true;
   }
 
-  verifiedServiceIdOf(orderId: bigint): string {
+  async verifiedServiceIdOf(orderId: bigint): Promise<string> {
     return this.verifiedServiceId.get(orderId.toString()) ?? zeroBytes32();
+  }
+
+  async escrowStatus(orderId: bigint): Promise<EscrowStatus> {
+    const escrow = this.escrows.get(orderId.toString());
+    return escrow ? escrow.status : EscrowStatus.None;
+  }
+
+  async activeMandateOf(owner: string, serviceId: string): Promise<{ mandateId: number; budget: bigint; spent: bigint } | undefined> {
+    const now = Date.now() / 1000;
+    for (const m of this.mandates.values()) {
+      if (m.owner.toLowerCase() !== owner.toLowerCase()) continue;
+      if (m.serviceId.toLowerCase() !== serviceId.toLowerCase()) continue;
+      if (m.revoked || now > m.expiresAt) continue;
+      return { mandateId: m.mandateId, budget: m.budget, spent: m.spent };
+    }
+    return undefined;
+  }
+
+  async reputationOf(provider: string): Promise<number> {
+    return this.reputations.get(provider.toLowerCase())?.score ?? 0;
   }
 }
 

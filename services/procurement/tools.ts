@@ -120,7 +120,7 @@ export function createAgentTools(shop: ProcurementShop): Map<ToolName, AgentTool
       let remainingAtoms = 0n;
       let mandateId: number | undefined;
       for (const { ledger } of shop.ledgers()) {
-        const m = ledger.activeMandateOf(shop.operator, serviceId);
+        const m = ledger.findActiveMandate(shop.operator, serviceId);
         if (m) {
           const remaining = m.budget - m.spent;
           if (remaining > remainingAtoms) {
@@ -192,7 +192,7 @@ export function createAgentTools(shop: ProcurementShop): Map<ToolName, AgentTool
       // Re-validate against CURRENT ledger state: the ledger, not the offer, is authority.
       const handle = shop.handleOf(offer.provider);
       if (!handle) return { ok: false, error: 'ProviderNotKnown' };
-      const mandate = handle.provider.ledger.activeMandateOf(shop.operator, offer.serviceId);
+      const mandate = handle.provider.ledger.findActiveMandate(shop.operator, offer.serviceId);
       if (!mandate) return { ok: false, error: 'MandateNotActiveAtPayment' };
       if (mandate.budget - mandate.spent < offer.amountAtoms) {
         return { ok: false, error: 'BudgetNotCompliantAtPayment' };
@@ -242,7 +242,7 @@ async function buildOffer(
   const handle = shop.handleOf(provider);
   if (!handle) throw new ProcurementPolicyError('ProviderNotKnown');
 
-  const mandate = handle.provider.ledger.activeMandateOf(shop.operator, serviceId);
+  const mandate = handle.provider.ledger.findActiveMandate(shop.operator, serviceId);
   if (!mandate) throw new ProcurementPolicyError('MandateDoesNotCoverService');
 
   const price = offering.pricePerCallAtoms;

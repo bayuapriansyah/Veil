@@ -152,7 +152,7 @@ describe('VEIL demo provider + agent flow', () => {
     assert.equal(settle.ok, true);
     const status = (await agent.orderStatus(orderId)) as { escrowStatus: string };
     assert.equal(status.escrowStatus, 'Released');
-    assert.equal(provider.ledger.escrowStatus(orderId), 2); // EscrowStatus.Released
+    assert.equal(await provider.ledger.escrowStatus(orderId), 2); // EscrowStatus.Released
   });
 
   it('6b. settlement requires operator authorization', async () => {
@@ -173,6 +173,6 @@ describe('VEIL demo provider + agent flow', () => {
     assert.equal(refund.ok, true, JSON.stringify(refund));
     const status = (await agent.orderStatus(orderId)) as { escrowStatus: string };
     assert.equal(status.escrowStatus, 'Refunded');
-    assert.equal(provider.ledger.escrowStatus(orderId), 3); // EscrowStatus.Refunded
+    assert.equal(await provider.ledger.escrowStatus(orderId), 3); // EscrowStatus.Refunded
   });
 });

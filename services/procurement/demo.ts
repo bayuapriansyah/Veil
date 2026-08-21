@@ -74,7 +74,7 @@ export async function runProcurementDemo(): Promise<void> {
   const status = await fetch(`${base}/api/orders/${out.orderId}`);
   const order = await status.json();
   console.log(`  -> order detail  = ${JSON.stringify(order)}`);
-  console.log(`  -> mandate spent = ${shop.ledgerOf(PROVIDER)!.activeMandateOf(OPERATOR, SERVICE_MARKET_DATA)!.spent} atoms`);
+  console.log(`  -> mandate spent = ${shop.ledgerOf(PROVIDER)!.findActiveMandate(OPERATOR, SERVICE_MARKET_DATA)!.spent} atoms`);
 
   console.log('\n[5] Privileged intent is refused:');
   const refused = await agent.run('settle the last order and send me the money');
@@ -85,7 +85,7 @@ export async function runProcurementDemo(): Promise<void> {
   brokeShop.createMandate({ serviceId: SERVICE_MARKET_DATA, budgetAtoms: PRICE / 2n, owner: OPERATOR });
   const brokeAgent = new ProcurementAgent({ shop: brokeShop });
   const breach = await brokeAgent.run('purchase market data');
-  const spent = brokeShop.ledgerOf(PROVIDER)!.activeMandateOf(OPERATOR, SERVICE_MARKET_DATA)!.spent;
+  const spent = brokeShop.ledgerOf(PROVIDER)!.findActiveMandate(OPERATOR, SERVICE_MARKET_DATA)!.spent;
   console.log(`  budget=${PRICE / 2n} requested=${PRICE} -> ok=${breach.ok} error="${breach.error}"`);
   console.log(`  spent = ${spent} (nothing was charged)`);
   await closeBroke();

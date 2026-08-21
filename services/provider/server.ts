@@ -138,11 +138,11 @@ export class VeilProvider {
    * Core payment-gated handler for a resource.
    * @returns {status, headers, body} — does not write the HTTP response itself.
    */
-  gatePayment(
+  async gatePayment(
     res: IncomingMessage,
     resourceUrl: string,
     providerAddress: string,
-  ): { allowed: true; orderId: bigint; payer: string } | { allowed: false; status: number; headers: Record<string, string>; error: string } {
+  ): Promise<{ allowed: true; orderId: bigint; payer: string } | { allowed: false; status: number; headers: Record<string, string>; error: string }> {
     const paymentHeader = headerStr(res.headers['x-payment'] ?? res.headers['payment-signature']);
     if (!paymentHeader) {
       return {
@@ -167,7 +167,7 @@ export class VeilProvider {
     }
     if (scheme === 'veil-exact') {
       const payload = raw as import('./types').VeilAdapterPayload;
-      return this._veilGateResult(payload, resourceUrl);
+      return await this._veilGateResult(payload, resourceUrl);
     }
     return { allowed: false, status: 402, headers: {}, error: `unsupported scheme: ${scheme}` };
   }
@@ -184,11 +184,11 @@ export class VeilProvider {
     return { allowed: true, orderId, payer: result.payer! };
   }
 
-  private _veilGateResult(
+  private async _veilGateResult(
     payload: import('./types').VeilAdapterPayload,
     resourceUrl: string,
-  ): { allowed: true; orderId: bigint; payer: string } | { allowed: false; status: number; headers: Record<string, string>; error: string } {
-    const result = this.adapter.verifyPayment(payload, this.opts.providerAddress, this.opts.pricePerCallAtoms);
+  ): Promise<{ allowed: true; orderId: bigint; payer: string } | { allowed: false; status: number; headers: Record<string, string>; error: string }> {
+    const result = await this.adapter.verifyPayment(payload, this.opts.providerAddress, this.opts.pricePerCallAtoms);
     if (!result.ok) {
       return { allowed: false, status: 402, headers: { 'PAYMENT-REQUIRED': base64Json({ x402Version: 2, error: result.error, accepts: this.paymentRequirements(resourceUrl).accepts }) }, error: result.error ?? 'payment rejected' };
     }
@@ -225,7 +225,7 @@ export class VeilProvider {
       let mandateId = opts.mandateId;
       if (mandateId === undefined) {
         // Prefer the caller's active mandate for this service (mirrors MandateManager).
-        mandateId = this.ledger.activeMandateOf(this.opts.operatorAddress, opts.serviceId)?.mandateId;
+        mandateId = this.ledger.findActiveMandate(this.opts.operatorAddress, opts.serviceId)?.mandateId;
       }
       if (mandateId === undefined) {
         // Ensure a default mandate exists (mirrors the deployed MandateManager setup).
@@ -258,20 +258,20 @@ export class VeilProvider {
   }
 
   /** After a valid payment, the provider fulfills: records fulfillment + result hash. */
-  fulfill(orderId: bigint, providerAddress: string, serviceId: string, payloadRef = keccak256(toUtf8Bytes('result'))): { resultHash: string; fulfillmentVerified: boolean } {
+  async fulfill(orderId: bigint, providerAddress: string, serviceId: string, payloadRef = keccak256(toUtf8Bytes('result'))): Promise<{ resultHash: string; fulfillmentVerified: boolean }> {
     const resultHash = this.adapter.computeResultHash({ orderId, serviceId, provider: providerAddress, payloadRef });
     // Mirrors: FulfillmentReceipt event -> Attestcoin verification -> verified.
     this.ledger.markFulfillmentVerified(orderId);
-    return { resultHash, fulfillmentVerified: this.ledger.isFulfillmentVerified(orderId) };
+    return { resultHash, fulfillmentVerified: await this.ledger.isFulfillmentVerified(orderId) };
   }
 
   // --- settlement / refund (mirrors SettlementEngine) --------------------- //
 
-  settle(orderId: bigint, caller?: string): { ok: boolean; error?: string } {
+  async settle(orderId: bigint, caller?: string): Promise<{ ok: boolean; error?: string }> {
     if (caller && caller.toLowerCase() !== this.opts.operatorAddress.toLowerCase()) return { ok: false, error: 'Unauthorized' };
-    if (this.ledger.escrowStatus(orderId) !== EscrowStatus.Locked) return { ok: false, error: 'EscrowNotLocked' };
-    if (!this.ledger.isPaymentVerified(orderId)) return { ok: false, error: 'PaymentNotVerified' };
-    if (!this.ledger.isFulfillmentVerified(orderId)) return { ok: false, error: 'FulfillmentNotVerified' };
+    if ((await this.ledger.escrowStatus(orderId)) !== EscrowStatus.Locked) return { ok: false, error: 'EscrowNotLocked' };
+    if (!(await this.ledger.isPaymentVerified(orderId))) return { ok: false, error: 'PaymentNotVerified' };
+    if (!(await this.ledger.isFulfillmentVerified(orderId))) return { ok: false, error: 'FulfillmentNotVerified' };
     try {
       this.ledger.release(orderId);
       return { ok: true };
@@ -280,9 +280,9 @@ export class VeilProvider {
     }
   }
 
-  refund(orderId: bigint, caller?: string): { ok: boolean; error?: string } {
+  async refund(orderId: bigint, caller?: string): Promise<{ ok: boolean; error?: string }> {
     if (caller && caller.toLowerCase() !== this.opts.operatorAddress.toLowerCase()) return { ok: false, error: 'Unauthorized' };
-    if (this.ledger.escrowStatus(orderId) !== EscrowStatus.Locked) return { ok: false, error: 'EscrowNotLocked' };
+    if ((await this.ledger.escrowStatus(orderId)) !== EscrowStatus.Locked) return { ok: false, error: 'EscrowNotLocked' };
     try {
       this.ledger.refund(orderId);
       return { ok: true };
@@ -319,15 +319,19 @@ export function createVeilServer(opts: ProviderOptions) {
     }
 
     if (req.method === 'GET' && path === '/api/market-data') {
-      const gate = provider.gatePayment(req, baseResource, opts.providerAddress);
-      if (!gate.allowed) {
-        return json(res, gate.status, { error: gate.error, x402Version: 2 }, gate.headers);
-      }
-      const symbol = query === undefined ? 'ETH/USD' : new URLSearchParams(query.replace(/^\?/, '')).get('symbol') ?? 'ETH/USD';
-      const data = provider.marketData(symbol);
-      const fulfillment = provider.fulfill(gate.orderId, opts.providerAddress, SERVICE_MARKET_DATA);
-      const paymentResponse = { success: true, orderId: gate.orderId.toString(), resultHash: fulfillment.resultHash };
-      return json(res, 200, data, { 'PAYMENT-RESPONSE': base64Json(paymentResponse) });
+      provider.gatePayment(req, baseResource, opts.providerAddress).then(async (gate) => {
+        if (!gate.allowed) {
+          return json(res, gate.status, { error: gate.error, x402Version: 2 }, gate.headers);
+        }
+        const symbol = query === undefined ? 'ETH/USD' : new URLSearchParams(query.replace(/^\?/, '')).get('symbol') ?? 'ETH/USD';
+        const data = provider.marketData(symbol);
+        const fulfillment = await provider.fulfill(gate.orderId, opts.providerAddress, SERVICE_MARKET_DATA);
+        const paymentResponse = { success: true, orderId: gate.orderId.toString(), resultHash: fulfillment.resultHash };
+        return json(res, 200, data, { 'PAYMENT-RESPONSE': base64Json(paymentResponse) });
+      }).catch((err) => {
+        return json(res, 500, { error: err?.message ?? 'internal error' });
+      });
+      return;
     }
 
     if (req.method === 'POST' && path === '/api/payments') {
@@ -386,32 +390,49 @@ export function createVeilServer(opts: ProviderOptions) {
       const orderId = BigInt(path.split('/')[3] ?? '0');
       const escrow = provider.ledger.escrow(orderId);
       const supplement = provider.ledger.orderSupplement(orderId);
-      return json(res, 200, {
-        orderId: orderId.toString(),
-        escrowStatus: escrow ? EscrowStatus[escrow.status] : 'None',
-        paymentVerified: provider.ledger.isPaymentVerified(orderId),
-        fulfillmentVerified: provider.ledger.isFulfillmentVerified(orderId),
-        serviceId: provider.ledger.verifiedServiceIdOf(orderId),
-        provider: escrow?.provider,
-        payer: escrow?.payer,
-        serviceName: supplement?.serviceName,
-        serviceDescription: supplement?.serviceDescription,
-        providerReputation: supplement?.providerReputation,
+      Promise.all([
+        provider.ledger.isPaymentVerified(orderId),
+        provider.ledger.isFulfillmentVerified(orderId),
+        provider.ledger.verifiedServiceIdOf(orderId),
+      ]).then(([paymentVerified, fulfillmentVerified, serviceId]) => {
+        return json(res, 200, {
+          orderId: orderId.toString(),
+          escrowStatus: escrow ? EscrowStatus[escrow.status] : 'None',
+          paymentVerified,
+          fulfillmentVerified,
+          serviceId,
+          provider: escrow?.provider,
+          payer: escrow?.payer,
+          serviceName: supplement?.serviceName,
+          serviceDescription: supplement?.serviceDescription,
+          providerReputation: supplement?.providerReputation,
+        });
+      }).catch((err) => {
+        return json(res, 500, { error: err?.message ?? 'internal error' });
       });
+      return;
     }
 
     if (req.method === 'POST' && path.startsWith('/api/settle/')) {
       const orderId = BigInt(path.split('/')[3] ?? '0');
       const caller = headerStr(req.headers['x-operator']);
-      const result = provider.settle(orderId, caller);
-      return json(res, result.ok ? 200 : 422, result.ok ? { ok: true } : result);
+      provider.settle(orderId, caller).then((result) => {
+        return json(res, result.ok ? 200 : 422, result.ok ? { ok: true } : result);
+      }).catch((err) => {
+        return json(res, 500, { error: err?.message ?? 'internal error' });
+      });
+      return;
     }
 
     if (req.method === 'POST' && path.startsWith('/api/refund/')) {
       const orderId = BigInt(path.split('/')[3] ?? '0');
       const caller = headerStr(req.headers['x-operator']);
-      const result = provider.refund(orderId, caller);
-      return json(res, result.ok ? 200 : 422, result.ok ? { ok: true } : result);
+      provider.refund(orderId, caller).then((result) => {
+        return json(res, result.ok ? 200 : 422, result.ok ? { ok: true } : result);
+      }).catch((err) => {
+        return json(res, 500, { error: err?.message ?? 'internal error' });
+      });
+      return;
     }
 
     if (req.method === 'GET' && path === '/scheme') {

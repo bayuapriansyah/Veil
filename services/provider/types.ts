@@ -108,3 +108,36 @@ export interface VerifyPaymentResult {
   orderId?: bigint;
   error?: string;
 }
+
+// --------------------------------------------------------------------------- //
+//  SettlementStateProvider — abstraction over demo (in-memory) vs on-chain     //
+// --------------------------------------------------------------------------- //
+
+export enum EscrowStatus {
+  None = 0,
+  Locked = 1,
+  Released = 2,
+  Refunded = 3,
+}
+
+/**
+ * Read-only interface for settlement state.
+ *
+ * Both `SettlementLedger` (demo, in-memory) and `OnChainStateProvider`
+ * (production, reads from Creditcoin contracts) implement this interface.
+ * The provider server and adapter program against this interface so the
+ * same code works in both modes.
+ *
+ * All methods return Promises for consistency — the on-chain provider
+ * makes async RPC calls, while the demo ledger wraps sync results.
+ */
+export interface SettlementStateProvider {
+  escrowStatus(orderId: bigint): Promise<EscrowStatus>;
+  isPaymentVerified(orderId: bigint): Promise<boolean>;
+  isFulfillmentVerified(orderId: bigint): Promise<boolean>;
+  verifiedServiceIdOf(orderId: bigint): Promise<string>;
+  activeMandateOf(owner: string, serviceId: string): Promise<{ mandateId: number; budget: bigint; spent: bigint } | undefined>;
+  reputationOf(provider: string): Promise<number>;
+  release?(orderId: bigint): void;
+  refund?(orderId: bigint): void;
+}

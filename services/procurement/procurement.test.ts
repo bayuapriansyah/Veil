@@ -90,16 +90,16 @@ describe('VEIL procurement agent', () => {
       const escrow = h.ledger.escrow(1189n)!;
       assert.equal(escrow.amount, PRICE);
       assert.equal(escrow.payer.toLowerCase(), h.shop.agentAddress.toLowerCase());
-      let mandate = h.ledger.activeMandateOf(OPERATOR, SERVICE_MARKET_DATA)!;
+      let mandate = h.ledger.findActiveMandate(OPERATOR, SERVICE_MARKET_DATA)!;
       assert.equal(mandate.spent, 0n); // nothing released yet — ledger still holds authority
 
       // Operator settlement moves the exact amount from budget to spent.
       const settle = await postOperator(h, '/api/settle', 1189n, h.operator);
       assert.equal(settle.ok, true, JSON.stringify(settle));
-      mandate = h.ledger.activeMandateOf(OPERATOR, SERVICE_MARKET_DATA)!;
+      mandate = h.ledger.findActiveMandate(OPERATOR, SERVICE_MARKET_DATA)!;
       assert.equal(mandate.spent, PRICE);
       assert.equal(mandate.budget - mandate.spent, AGENT_BUDGET - PRICE);
-      assert.equal(h.ledger.escrowStatus(1189n), 2); // Released
+      assert.equal(await h.ledger.escrowStatus(1189n), 2); // Released
     } finally {
       await h.close();
     }
@@ -114,7 +114,7 @@ describe('VEIL procurement agent', () => {
       const requestService = out.plan.steps.find((s) => s.tool === 'requestService');
       assert.ok(requestService, 'plan should include requestService as the entry point');
       assert.equal(out.results[requestService!.index], undefined, 'requestService never ran');
-      assert.equal(h.ledger.activeMandateOf(OPERATOR, SERVICE_MARKET_DATA)!.spent, 0n);
+      assert.equal(h.ledger.findActiveMandate(OPERATOR, SERVICE_MARKET_DATA)!.spent, 0n);
     } finally {
       await h.close();
     }
@@ -126,8 +126,8 @@ describe('VEIL procurement agent', () => {
       const out = await h.agent.run('purchase compute service');
       assert.equal(out.ok, false);
       assert.match(out.error ?? '', /mandate|covers/i);
-      assert.equal(h.ledger.activeMandateOf(OPERATOR, SERVICE_COMPUTE), undefined);
-      assert.equal(h.ledger.escrowStatus(1189n), 0); // EscrowStatus.None — nothing reserved either
+      assert.equal(h.ledger.findActiveMandate(OPERATOR, SERVICE_COMPUTE), undefined);
+      assert.equal(await h.ledger.escrowStatus(1189n), 0); // EscrowStatus.None — nothing reserved either
     } finally {
       await h.close();
     }
@@ -139,7 +139,7 @@ describe('VEIL procurement agent', () => {
       const out = await h.agent.run('purchase market data');
       assert.equal(out.ok, false);
       assert.match(out.error ?? '', /mandate|covers/i);
-      assert.equal(h.ledger.activeMandateOf(OPERATOR, SERVICE_MARKET_DATA), undefined);
+      assert.equal(h.ledger.findActiveMandate(OPERATOR, SERVICE_MARKET_DATA), undefined);
     } finally {
       await h.close();
     }
@@ -153,20 +153,20 @@ describe('VEIL procurement agent', () => {
       const orderId = BigInt(out.orderId!);
 
       // The agent acted, but the ledger is still the authority:
-      assert.equal(h.ledger.escrowStatus(orderId), 1); // Locked
-      assert.equal(h.ledger.isPaymentVerified(orderId), true);
-      assert.equal(h.ledger.isFulfillmentVerified(orderId), true);
+      assert.equal(await h.ledger.escrowStatus(orderId), 1); // Locked
+      assert.equal(await h.ledger.isPaymentVerified(orderId), true);
+      assert.equal(await h.ledger.isFulfillmentVerified(orderId), true);
 
       // A stranger cannot settle — the escrow stays Locked.
       const stranger = await postOperator(h, '/api/settle', orderId, '0x' + '99'.repeat(20));
       assert.equal(stranger.ok, false);
       assert.match(stranger.error ?? '', /Unauthorized/i);
-      assert.equal(h.ledger.escrowStatus(orderId), 1); // still Locked
+      assert.equal(await h.ledger.escrowStatus(orderId), 1); // still Locked
 
       // Only the operator can settle — via the /api/settle rail.
       const okSettle = await postOperator(h, '/api/settle', orderId, h.operator);
       assert.equal(okSettle.ok, true);
-      assert.equal(h.ledger.escrowStatus(orderId), 2); // Released
+      assert.equal(await h.ledger.escrowStatus(orderId), 2); // Released
     } finally {
       await h.close();
     }

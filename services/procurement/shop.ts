@@ -266,7 +266,7 @@ export class ProcurementShop {
   }
 
   reputationOf(provider: string): number {
-    return this.handles.get(provider.toLowerCase())?.provider.ledger.reputationOf(provider) ?? 0;
+    return this.handles.get(provider.toLowerCase())?.provider.ledger.getReputation(provider) ?? 0;
   }
 
   // --- purchasing (the ONLY payment path) --------------------------------- //
@@ -387,9 +387,9 @@ export class ProcurementShop {
       provider: offer.provider,
       serviceId: offer.serviceId,
       status: res.status,
-      paymentVerified: handle.provider.ledger.isPaymentVerified(offer.orderId),
-      fulfillmentVerified: handle.provider.ledger.isFulfillmentVerified(offer.orderId),
-      escrowStatus: escrowLabel(handle.provider.ledger.escrowStatus(offer.orderId)),
+      paymentVerified: await handle.provider.ledger.isPaymentVerified(offer.orderId),
+      fulfillmentVerified: await handle.provider.ledger.isFulfillmentVerified(offer.orderId),
+      escrowStatus: escrowLabel(await handle.provider.ledger.escrowStatus(offer.orderId)),
       onchain: { txHash: onchain.txHash, error: onchain.error },
     };
   }
