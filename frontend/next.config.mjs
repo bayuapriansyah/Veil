@@ -6,6 +6,17 @@ const nextConfig = {
   experimental: {
     externalDir: true,
   },
+  // Exclude optional heavy modules that wagmi/connectors pulls in via
+  // @base-org/account → @coinbase/cdp-sdk → @x402/* but are never used.
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@coinbase/cdp-sdk': false,
+      '@x402/evm': false,
+      '@x402/svm': false,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
