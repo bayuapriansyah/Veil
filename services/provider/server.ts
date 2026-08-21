@@ -24,6 +24,8 @@
  *                  verified, then fulfillment + settlement follow VEIL semantics.
  */
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { readFileSync } from 'node:fs';
 import { AddressInfo } from 'node:net';
 import { keccak256, toUtf8Bytes } from 'ethers';
 
@@ -34,6 +36,7 @@ import { verifyExactPayment, buildUsdcRequirement } from './x402';
 import { MarketDataSource, MarketDataResult, createMarketDataSource } from './market-data-source';
 import { isProductionMode } from '../config/mode';
 import { OnChainStateProvider, loadOnChainStateProviderConfig } from './onchain-ledger';
+import { MiddlewareConfig, RateLimiter, applyMiddleware, loadAuthConfig } from './middleware';
 
 export interface MarketDataOptions {
   symbol?: string;
@@ -71,6 +74,12 @@ export interface ProviderOptions {
   ledger?: SettlementStateProvider;
   /** Market data source (mock or real API). */
   marketSource?: MarketDataSource;
+  /** TLS cert/key paths for HTTPS (optional). */
+  tls?: { certPath: string; keyPath: string };
+  /** Middleware configuration (auth, rate limit, CORS). */
+  middleware?: MiddlewareConfig;
+  /** Rate limit requests per minute (default: 100). 0 = unlimited. */
+  rateLimitMaxRequests?: number;
 }
 
 export function base64Json(value: unknown): string {
@@ -90,7 +99,7 @@ export class VeilProvider {
   adapter: VeilAdapter;
   ledger: VeilLedger;
   marketSource: MarketDataSource;
-  opts: Required<Omit<ProviderOptions, 'usdc' | 'ledger' | 'marketSource'>> & Pick<ProviderOptions, 'usdc' | 'ledger' | 'marketSource'>;
+  opts: Required<Omit<ProviderOptions, 'usdc' | 'ledger' | 'marketSource' | 'tls' | 'middleware' | 'rateLimitMaxRequests'>> & Pick<ProviderOptions, 'usdc' | 'ledger' | 'marketSource' | 'tls' | 'middleware' | 'rateLimitMaxRequests'>;
 
   constructor(opts: ProviderOptions) {
     this.opts = {
@@ -326,7 +335,22 @@ export function createVeilServer(opts: ProviderOptions) {
   const provider = new VeilProvider(opts);
   const baseResource = `http://localhost/api/market-data`;
 
+  // Set up rate limiter if configured
+  const limiter = (opts.rateLimitMaxRequests ?? 100) > 0
+    ? new RateLimiter({ maxRequests: opts.rateLimitMaxRequests ?? 100 })
+    : undefined;
+  const mwConfig: MiddlewareConfig = opts.middleware ?? {};
+
+  // Sweep expired rate limit entries every 5 minutes
+  if (limiter) setInterval(() => limiter.sweep(), 300_000).unref();
+
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    // Apply middleware (CORS, rate limit, auth)
+    const mwResult = applyMiddleware(req, res, mwConfig, limiter);
+    if (mwResult) {
+      return json(res, mwResult.status, { error: mwResult.error }, mwResult.headers);
+    }
+
     const url = req.url ?? '/';
     const [path, query] = url.split('?');
 
@@ -464,9 +488,25 @@ export function createVeilServer(opts: ProviderOptions) {
 
 export async function startProvider(opts: ProviderOptions, port = 0): Promise<{ server: ReturnType<typeof createVeilServer>; port: number; provider: VeilProvider }> {
   const server = createVeilServer(opts);
-  await new Promise<void>((resolve) => server.listen(port, resolve));
-  const address = server.address() as AddressInfo;
-  return { server, port: address.port, provider: (server as unknown as { __provider: VeilProvider }).__provider };
+
+  // TLS: if cert+key are provided, wrap in HTTPS
+  let actualServer: ReturnType<typeof createVeilServer> = server;
+  if (opts.tls?.certPath && opts.tls?.keyPath) {
+    try {
+      const cert = readFileSync(opts.tls.certPath);
+      const key = readFileSync(opts.tls.keyPath);
+      const httpsServer = createHttpsServer({ cert, key }, (req, res) => server.emit('request', req, res));
+      actualServer = httpsServer as unknown as ReturnType<typeof createVeilServer>;
+      // Copy __provider ref
+      (httpsServer as unknown as { __provider?: VeilProvider }).__provider = (server as unknown as { __provider: VeilProvider }).__provider;
+    } catch (e: any) {
+      console.warn(`TLS setup failed (${e?.message}), falling back to HTTP`);
+    }
+  }
+
+  await new Promise<void>((resolve) => actualServer.listen(port, resolve));
+  const address = actualServer.address() as AddressInfo;
+  return { server: actualServer, port: address.port, provider: (actualServer as unknown as { __provider: VeilProvider }).__provider };
 }
 
 // Standalone runner: node services/provider/server.ts (uses .env values).
@@ -479,6 +519,7 @@ if (require.main === module) {
 
   const opts: ProviderOptions = { providerAddress, operatorAddress, advertiseRealX402: true };
 
+  // Production mode: on-chain verification
   if (isProductionMode()) {
     const config = loadOnChainStateProviderConfig();
     if (config) {
@@ -489,8 +530,27 @@ if (require.main === module) {
     }
   }
 
-  startProvider(opts, port).then(({ server }) => {
-    console.log(`VEIL provider listening on http://127.0.0.1:${port}`);
+  // TLS
+  const certPath = process.env.TLS_CERT_PATH;
+  const keyPath = process.env.TLS_KEY_PATH;
+  if (certPath && keyPath) {
+    opts.tls = { certPath, keyPath };
+    console.log('TLS enabled');
+  }
+
+  // Middleware: auth, rate limit, CORS
+  const auth = loadAuthConfig();
+  const rateLimitMax = Number(process.env.PROVIDER_RATE_LIMIT_MAX ?? '100');
+  if (auth || rateLimitMax > 0) {
+    opts.middleware = { auth: auth ?? undefined };
+    opts.rateLimitMaxRequests = rateLimitMax;
+    if (auth) console.log(`API key auth enabled (${auth.keys.size} keys)`);
+    console.log(`Rate limit: ${rateLimitMax} req/min`);
+  }
+
+  const protocol = opts.tls ? 'https' : 'http';
+  startProvider(opts, port).then(({ server, port: actualPort }) => {
+    console.log(`VEIL provider listening on ${protocol}://127.0.0.1:${actualPort}`);
     console.log(`advertised schemes: veil-exact (VEIL demo adapter), exact (real x402, verification-only)`);
   });
 }
