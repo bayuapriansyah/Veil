@@ -163,6 +163,6 @@ Sepolia (see `TESTNET.md` section 5.1 for the proof evidence table).
 
 Deployment notes for reproduction: `forge` 1.5.1 requires `--broadcast` on
 `forge create` (already baked into `script/deploy.ts`), and `forge build` needs
-`--skip "contracts/test/*"` (forge-std is not installed). After a restart the
+`--skip "contracts/test/*"` (forge-std is installed but test deps managed separately). After a restart the
 worker re-scans from the current block by default — pass `WORKER_FROM_BLOCK` to
 re-ingest older events that have not been proven yet.

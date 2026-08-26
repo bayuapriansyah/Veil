@@ -72,7 +72,7 @@ the console.
 | `demo:provider` | `tsx services/provider/server.ts` | standalone provider HTTP server |
 | `demo:procurement` | `tsx services/procurement/demo.ts` | agent demo |
 | `demo:audit` | `tsx services/audit/demo.ts` | vault demo |
-| `build:contracts` / `test:contracts` | `forge build` / `forge test` | **BLOCKED** here (no forge) |
+| `build:contracts` / `test:contracts` | `forge build` / `forge test` | 19/19 pass |
 
 ### Frontend (`frontend/package.json`)
 
@@ -112,7 +112,7 @@ plus manual E2E against `http://localhost:3000`.
   (`EBADPLATFORM` from a transitive `n@9.2.3`). It loads the Emscripten `solc`
   from the npx cache and resolves `@openzeppelin/` + `@gluwa/` remappings from
   `node_modules`. Result: **19 contracts compile** with `0.8.23`.
-- `forge build` / `forge test` remain **BLOCKED** (no forge).
+- `forge build` / `forge test` — **19/19 pass** (forge-std installed).
 
 ---
 

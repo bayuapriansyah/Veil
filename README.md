@@ -26,25 +26,26 @@ The name is recursive: **V**erifiable **E**conomic **I**nfrastructure
 5. [How Attestcoin is functionally used](#how-attestcoin-is-functionally-used)
 6. [Architecture](#architecture)
 7. [AI Agent](#ai-agent)
-8. [Payment](#payment)
-9. [Fulfillment](#fulfillment)
-10. [Escrow](#escrow)
-11. [Privacy](#privacy)
-12. [Audit](#audit)
-13. [Kill Switch](#kill-switch)
-14. [Technology stack](#technology-stack)
-15. [Deployment](#deployment)
-16. [Testing](#testing)
-17. [Limitations](#limitations)
-18. [Future roadmap](#future-roadmap)
-19. [Production vs prototype vs roadmap](#production-vs-prototype-vs-roadmap)
-20. [Repository map](#repository-map)
-21. [Getting started](#getting-started)
-22. [Attestcoin integration status](#attestcoin-integration-status)
-23. [Trust model](#trust-model)
-24. [Security notes](#security-notes)
-25. [Environment](#environment)
-26. [Documentation](#documentation)
+8. [A2A Delegation](#a2a-delegation)
+9. [Payment](#payment)
+10. [Fulfillment](#fulfillment)
+11. [Escrow](#escrow)
+12. [Privacy](#privacy)
+13. [Audit](#audit)
+14. [Kill Switch](#kill-switch)
+15. [Technology stack](#technology-stack)
+16. [Deployment](#deployment)
+17. [Testing](#testing)
+18. [Limitations](#limitations)
+19. [Future roadmap](#future-roadmap)
+20. [Production vs prototype vs roadmap](#production-vs-prototype-vs-roadmap)
+21. [Repository map](#repository-map)
+22. [Getting started](#getting-started)
+23. [Attestcoin integration status](#attestcoin-integration-status)
+24. [Trust model](#trust-model)
+25. [Security notes](#security-notes)
+26. [Environment](#environment)
+27. [Documentation](#documentation)
 
 ---
 
@@ -224,6 +225,33 @@ Planner selection:
   7-tool allowlist. On **any** error it soft-fails to the deterministic planner.
   The agent never fabricates an outcome.
 
+## A2A Delegation
+
+Agent A can delegate procurement tasks to Agent B via the A2A (Agent-to-Agent)
+JSON-RPC protocol (`@a2a-js/sdk` v1). The flow:
+
+1. Agent A signs a delegation payload (`{ type: 'a2a-delegation', orderId,
+   agent, task, timestamp }`) with its on-chain wallet key.
+2. Agent B receives the `SendMessage` request, verifies the EIP-191 signature
+   (recovering the signer), checks the 5-minute freshness window, and
+   cross-checks the payload fields (orderId, task, agent) against the message
+   metadata.
+3. If valid, Agent B executes the procurement using its own wallet (Agent B →
+   Shop C on-chain AgentPayment + FulfillmentReceipt on Sepolia).
+4. Agent B returns the verified result including on-chain tx hashes for both the
+   B→C payment and the A→B fulfillment.
+
+Agent B self-registers on the `VeilRegistry` contract on CC3 at startup, making
+its endpoint discoverable by Agent A on-chain (see
+[`services/agent-b/`](services/agent-b/)).
+
+Security guarantees:
+- **Unsigned delegations are rejected** — an unverified caller can never spend
+  Agent B's wallet.
+- **Stale delegations are rejected** — replay guard enforces a 5-minute
+  freshness window.
+- **Agent A's address is resolved from the on-chain registry**, not hardcoded.
+
 ## Payment
 
 - **x402 HTTP handshake (real).** `GET /api/market-data` without payment returns
@@ -350,9 +378,12 @@ Full prerequisites, ordering, and verification: [`docs/DEPLOYMENT.md`](docs/DEPL
 
 ## Testing
 
-- **26 tests / 4 suites** (Node `tsx --test`), all green:
-  - `services/provider/x402.test.ts` — 5 tests (real x402 `exact`/EIP-3009 crypto,
-    sign/ECRECOVER, mismatch/hyper-payment/tamper rejection).
+- **50 tests / 8 suites** (Node), all green:
+  - `services/provider/x402.test.ts` — 8 tests (real x402 `exact`/EIP-3009 crypto,
+    sign/ECRECOVER, mismatch/hyper-payment/tamper rejection, time-window
+    enforcement, nonce replay guard, amount enforcement).
+  - `services/provider/hardening.test.ts` — 16 tests (auth, rate limit, CORS,
+    error queue, replay).
   - `services/demo/flow.test.ts` — 9 tests (the 7 required scenarios + malformed
     payment + settlement authorization).
   - `services/procurement/procurement.test.ts` — 7 tests (success, budget breach,
@@ -360,14 +391,16 @@ Full prerequisites, ordering, and verification: [`docs/DEPLOYMENT.md`](docs/DEPL
     deterministic fallback).
   - `services/audit/audit.test.ts` — 5 tests (unauthorized, authorized, encrypted
     metadata/tamper, selective disclosure, revoked + nonce replay).
+  - `services/config/mode.test.ts` — mode resolution tests.
+  - `services/agent-b/executor.test.ts` — delegation signature verification tests.
 - **`npm run typecheck`** (root + frontend) green.
 - **`npm run compile-check`** — 19 Solidity contracts compile via solc-js.
 - **Frontend production build** (`npm run build`) green (17 routes).
-- **Forge suite** (`contracts/test/VeilFoundation.t.sol`) is written and ready;
-  **BLOCKED** because `forge-std` is not installed (contracts still compile via
-  solc-js).
-- Live Attestcoin integration: **executed** — 8/8 facts verified on CC3, and the
-  worker attaches proofs to the live audit vault (`see docs/TESTNET.md §5.1`).
+- **Forge suite** (`contracts/test/VeilFoundation.t.sol`) — **19/19 pass**
+  (forge-std installed, `forge test` runs clean).
+- Live Attestcoin integration: **executed** — 10/10 facts verified on CC3 incl.
+  live frontend purchases and agent-wallet purchases; proofs attached to the
+  audit vault live (`see docs/TESTNET.md §5.1`).
 
 ## Limitations
 
@@ -375,9 +408,10 @@ Honest inventory of what VEIL is and is not at this stage:
 
 - **The cross-chain Attestcoin loop is executed live on testnet** (Sepolia →
   CC3), and every frontend purchase also records a real `AgentPayment`
-  (best-effort, soft-fail). The on-chain `SettlementEngine` step is **not
-  deployed**: settlement in the console is the in-memory mirror, explicitly
-  labeled.
+  (best-effort, soft-fail). Order 603000 completed the full on-chain loop:
+  Sepolia payment → Attestcoin proof → ASC verification → SettlementEngine
+  settle. The frontend runs the same state machine against an in-memory mirror
+  in demo mode, explicitly labeled.
 - **`veil-exact` is a VEIL demo-adapter scheme, not official x402.** The only
   *official* x402 component (`exact`/EIP-3009) does cryptographic verification
   but no on-chain USDC settlement (no live facilitator). The repo does not claim
@@ -463,7 +497,7 @@ npm install --prefix frontend
 ```bash
 npm run typecheck            # services TS (tsc --noEmit)
 npm run compile-check        # all contracts compile via solc-js (0.8.23, paris)
-npm test                     # 6 suites / 47 tests
+npm test                     # 8 suites / 50 tests
 cd frontend && npm run typecheck && npm run build
 ```
 
@@ -532,7 +566,7 @@ The integration is real and **executed live** against verified infrastructure
 |------|--------|
 | CC3 Testnet RPC + Proof Builder verified (chainId `102031`, Sepolia chainKey `1`) | DONE |
 | Solidity compilation (19 contracts, solc-js) | DONE |
-| TypeScript typecheck + 47 tests / 6 suites | DONE |
+| TypeScript typecheck + 50 tests / 8 suites | DONE |
 | Read-only live-check | DONE |
 | Deploy `VeilSource` on Sepolia | **DONE** — `0xbe2d0793344e656690be44b81128BbF0EDa6F93c` |
 | Deploy `AttestationReceiver` ASC on CC3 | **DONE** — `0x071ff3210EA7619B7065ea24058030464093Dccd` |
@@ -540,7 +574,7 @@ The integration is real and **executed live** against verified infrastructure
 | Generate a real proof + submit to ASC | **DONE** — 10/10 events verified incl. live frontend purchases and agent-wallet purchases; proofs attached to the audit vault live (see `docs/TESTNET.md` §5.1) |
 | Live `npm run worker` end-to-end | **DONE** — survives RPC resets, retries pending proofs, structured logs + health check (:8082) |
 | Full purchase→proof→settlement loop on-chain | **DONE** — order 603000: Sepolia payment + fulfillment events → CC3 proofs → SettlementEngine settle tx `0xde8315…6f8e` |
-| Foundry `forge test` | READY — suite present; run with Foundry installed |
+| Foundry `forge test` | **DONE** — 19/19 Solidity tests pass (forge-std installed) |
 
 Full evidence table with tx hashes and blocks: [`docs/TESTNET.md`](docs/TESTNET.md).
 

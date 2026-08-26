@@ -218,11 +218,11 @@ What is real vs what is mirrored in the repo:
 
 | # | Item | Status |
 |---|---|---|
-| 1 | `forge` / `cast` installed | **BLOCKED** (no Foundry binary on this Windows box; foundryup needs bash) |
-| 2 | Deploy `VeilSource` on Sepolia | **BLOCKED** (needs funded Sepolia wallet + RPC key) |
-| 3 | Deploy `AttestationReceiver` ASC on CC3 | **BLOCKED** (needs funded CTC wallet via faucet) |
-| 4 | Generate a real proof for a real VEIL event | **BLOCKED** (needs a mined source event first; Proof Builder is live) |
-| 5 | End-to-end live run (`npm run worker`) | **BLOCKED** (needs 2 + 3 + funds) |
+| 1 | `forge` / `cast` installed | **DONE** (Foundry installed, `forge test` runs 19/19) |
+| 2 | Deploy `VeilSource` on Sepolia | **DONE** — `0xbe2d0793344e656690be44b81128BbF0EDa6F93c` |
+| 3 | Deploy `AttestationReceiver` ASC on CC3 | **DONE** — `0x071ff3210EA7619B7065ea24058030464093Dccd` |
+| 4 | Generate a real proof for a real VEIL event | **DONE** — 10/10 events verified on CC3 |
+| 5 | End-to-end live run (`npm run worker`) | **DONE** — order 603000 settled live on-chain |
 | 6 | Solidity compile (19 contracts, 0.8.23) | **DONE** (`node script/compile-check.js`) |
 | 7 | Services typecheck | **DONE** (`npm run typecheck`, exit 0) |
 | 8 | Read-only live-check canary | **DONE in Phase 0**; requires nothing secret |
