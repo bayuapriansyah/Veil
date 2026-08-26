@@ -137,7 +137,7 @@ class VeilRuntime {
       // already-recorded on-chain AgentPayment events (soft-fail avoided).
       // 600000 was already recorded + proven on Creditcoin; the next live
       // settlement run uses 601000+. Agent-to-agent reserves 700_000n+.
-      orderIdSeed: 601_000n,
+      orderIdSeed: 603_000n,
       providers: [
         // Provider[0] is the ON-CHAIN provider: in production its address comes
         // from VEIL_PROVIDER_ADDRESS and its key from SOURCE_CHAIN_PROVIDER_PRIVATE_KEY,
@@ -413,7 +413,7 @@ class VeilRuntime {
       spentAtoms: spent.toString(),
       remainingAtoms: (budget - spent).toString(),
       reservedAtoms: this.reserved().toString(),
-      reputation: { provider: this.providerAddress, score: this.shop ? this.shop.reputationOf(this.providerAddress) : 5, reviews: 1 },
+      reputation: { provider: this.providerAddress, score: this.shop ? this.shop.reputationScore(this.providerAddress) : 5, reviews: 1 },
       verifiedTransactions: verified,
       transactionCount: this.orders.length,
       currentMandate: this.currentMandate(),
@@ -575,12 +575,13 @@ function orderFromOutcome(outcome: Awaited<ReturnType<ProcurementAgent['run']>>,
 }
 
 function successStages(finalSettlement: 'SETTLED' | 'PENDING'): TimelineStage[] {
+  const live = resolveVeilMode() === 'production';
   return [
     { key: 'authorization', label: 'Authorization', status: 'VERIFIED', note: 'mandate valid · budget compliant' },
     { key: 'payment', label: 'Payment', status: 'VERIFIED', note: 'AgentPayment recorded (veil-exact)' },
-    { key: 'payment-attestation', label: 'Attestation', status: 'VERIFIED', note: 'payment attestation (mirror)' },
+    { key: 'payment-attestation', label: 'Attestation', status: 'VERIFIED', note: live ? 'payment attestation proven on Creditcoin' : 'payment attestation (mirror)' },
     { key: 'fulfillment', label: 'Fulfillment', status: 'VERIFIED', note: 'result hash recorded' },
-    { key: 'fulfillment-attestation', label: 'Attestation', status: 'VERIFIED', note: 'fulfillment attestation (mirror)' },
+    { key: 'fulfillment-attestation', label: 'Attestation', status: 'VERIFIED', note: live ? 'fulfillment attestation proven on Creditcoin' : 'fulfillment attestation (mirror)' },
     { key: 'settlement', label: 'Settlement', status: finalSettlement, note: finalSettlement === 'SETTLED' ? 'escrow released by operator' : 'escrow locked — awaiting operator' },
   ];
 }
