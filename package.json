@@ -17,9 +17,11 @@
     "demo:procurement": "tsx services/procurement/demo.ts",
     "demo:audit": "tsx services/audit/demo.ts",
     "agent-b": "tsx services/agent-b/server.ts",
+    "replay:attestations": "tsx services/attestation/replay.ts",
     "test:audit": "tsx --test services/audit/audit.test.ts",
     "test:procurement": "tsx --test services/procurement/procurement.test.ts",
-    "test": "tsx --test services/config/mode.test.ts services/provider/x402.test.ts services/demo/flow.test.ts services/procurement/procurement.test.ts services/audit/audit.test.ts"
+    "test:hardening": "tsx --test services/provider/hardening.test.ts",
+    "test": "tsx --test services/config/mode.test.ts services/provider/x402.test.ts services/demo/flow.test.ts services/procurement/procurement.test.ts services/audit/audit.test.ts services/provider/hardening.test.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",

@@ -17,6 +17,9 @@ coverage/
 # Deployer wallet (secret; keep out of git)
 .wallet
 
+# Attestation error queue (local runtime state)
+.veil/
+
 # Local tool config (not part of the project)
 .claude/
 .codex/

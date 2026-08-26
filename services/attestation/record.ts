@@ -94,14 +94,24 @@ export async function recordAgentPayment(
       return { ok: true, txHash: tx.hash };
     }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    const error = e instanceof Error ? e.message : String(e);
+    appendError({
+      ts: new Date().toISOString(),
+      type: 'payment',
+      orderId: opts.orderId.toString(),
+      error,
+      opts: {
+        orderId: opts.orderId.toString(),
+        provider: opts.provider,
+        amount: opts.amount.toString(),
+        serviceId: opts.serviceId,
+        transactionRef: opts.transactionRef,
+      },
+    });
+    return { ok: false, error };
   }
 }
 
-/**
- * Record a FulfillmentReceipt on the live VeilSource contract (soft-fail).
- * Only the provider recorded for the order may call this on-chain.
- */
 /**
  * Record a FulfillmentReceipt on the live VeilSource contract (soft-fail).
  * Only the provider recorded for the order may call this on-chain — pass the
@@ -140,7 +150,20 @@ export async function recordFulfillment(
       return { ok: true, txHash: tx.hash };
     }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    const error = e instanceof Error ? e.message : String(e);
+    appendError({
+      ts: new Date().toISOString(),
+      type: 'fulfillment',
+      orderId: opts.orderId.toString(),
+      error,
+      opts: {
+        orderId: opts.orderId.toString(),
+        resultHash: opts.resultHash,
+        serviceId: opts.serviceId,
+        transactionRef: opts.transactionRef,
+      },
+    });
+    return { ok: false, error };
   }
 }
 
@@ -161,7 +184,7 @@ function ensureErrorDir(): void {
   if (!existsSync(ERROR_DIR)) mkdirSync(ERROR_DIR, { recursive: true });
 }
 
-/** Append a failed recording to the error queue for later replay. */
+/** Append a failed recording to the error queue (dedup by type+orderId). */
 export function appendError(record: FailedRecord): void {
   try {
     ensureErrorDir();
@@ -169,7 +192,10 @@ export function appendError(record: FailedRecord): void {
     try {
       records = JSON.parse(readFileSync(ERROR_FILE, 'utf8'));
     } catch { /* empty file */ }
-    records.push(record);
+    // Dedup: replace an existing entry for the same type+orderId instead of stacking.
+    const idx = records.findIndex((r) => r.type === record.type && r.orderId === record.orderId);
+    if (idx >= 0) records[idx] = record;
+    else records.push(record);
     writeFileSync(ERROR_FILE, JSON.stringify(records, null, 2));
   } catch { /* best-effort */ }
 }
