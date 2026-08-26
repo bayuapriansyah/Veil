@@ -14,8 +14,13 @@
 import { Wallet, Contract, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
 
 const AGENT_B_URL_FALLBACK = process.env.AGENT_B_URL ?? 'http://127.0.0.1:8081';
-const VEIL_REGISTRY_ADDRESS = process.env.VEIL_REGISTRY_ADDRESS ?? '';
 const CC3_RPC_URL = process.env.CREDITCOIN_RPC_URL ?? 'https://rpc.cc3-testnet.creditcoin.network';
+
+function getRegistryAddress(): string {
+  return process.env.VEIL_REGISTRY_ADDRESS
+    ?? process.env.NEXT_PUBLIC_VEIL_REGISTRY_ADDRESS
+    ?? '';
+}
 
 const REGISTRY_ABI = [
   'function listActiveAgents() view returns (uint256[])',
@@ -35,10 +40,11 @@ export interface DiscoveredAgent {
  * Returns endpoint + wallet address, or null if none found.
  */
 export async function discoverAgentFromRegistry(): Promise<DiscoveredAgent | null> {
-  if (!VEIL_REGISTRY_ADDRESS) return null;
+  const addr = getRegistryAddress();
+  if (!addr) return null;
   try {
     const provider = new JsonRpcProvider(CC3_RPC_URL);
-    const registry = new Contract(VEIL_REGISTRY_ADDRESS, REGISTRY_ABI, provider);
+    const registry = new Contract(addr, REGISTRY_ABI, provider);
     const activeIds: bigint[] = await registry.listActiveAgents();
     if (activeIds.length === 0) return null;
     const agentId = Number(activeIds[0]);
@@ -77,9 +83,52 @@ export interface AgentBDelegationResult {
   orderId?: string;
   provider?: string;
   bToCPaymentTx?: string;
+  bToCPaymentRecorded?: boolean;
   aToBFulfillmentTx?: string;
+  aToBFulfillmentRecorded?: boolean;
   error?: string;
 }
+
+/** JSON-RPC response envelope. */
+interface JsonRpcResponse {
+  jsonrpc?: string;
+  id?: string | number | null;
+  error?: { code?: number; message?: string } | null;
+  result?: A2aTaskResult | A2aMessageResult | null;
+}
+
+/** Terminal task shape (subset used by the client). */
+interface A2aTaskResult {
+  id?: string;
+  contextId?: string;
+  status?: {
+    state?: string | number;
+    message?: A2aMessageResult;
+  };
+}
+
+/** Message shape (subset used by the client). */
+interface A2aMessageResult {
+  role?: string | number;
+  parts?: Array<{ content?: { $case?: string; value?: unknown }; text?: string }>;
+  metadata?: Record<string, unknown>;
+}
+
+/** Extract concatenated text from v1 (or legacy) part arrays. */
+function extractPartsText(parts: A2aMessageResult['parts']): string {
+  return (parts ?? [])
+    .map((p) => {
+      if (p?.content && p.content.$case === 'text' && typeof p.content.value === 'string') return p.content.value;
+      // Legacy flat shape fallback
+      const legacy = (p as { text?: unknown })?.text;
+      return typeof legacy === 'string' ? legacy : '';
+    })
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
+const TASK_COMPLETED_STATES = new Set(['TASK_STATE_COMPLETED', 'COMPLETED', 3]);
 
 /**
  * Send a delegated task to Agent B via A2A JSON-RPC.
@@ -123,12 +172,12 @@ export async function delegateToAgentB(
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: `delegation-${aToBOrderId}`,
-        method: 'message/send',
+        method: 'SendMessage',
         params: {
           tenant: '',
           message: {
             messageId: `msg-${aToBOrderId}-${timestamp}`,
-            role: 'user',
+            role: 'ROLE_USER',
             parts: [{ text: task }],
             metadata: {
               aToBOrderId: aToBOrderId.toString(),
@@ -149,53 +198,62 @@ export async function delegateToAgentB(
       return { ok: false, error: `HTTP ${response.status}: ${await response.text()}` };
     }
 
-    const rpc = await response.json();
+    const rpc = (await response.json()) as JsonRpcResponse;
     if (rpc.error) {
       return { ok: false, error: rpc.error.message ?? JSON.stringify(rpc.error) };
     }
 
-    // Parse the result (Message or Task)
-    const result = rpc.result;
-    if (!result) {
+    // Parse the result — SDK wraps in { task: ... } or { message: ... }
+    const raw = rpc.result as Record<string, unknown> | undefined;
+    if (!raw) {
       return { ok: false, error: 'Empty A2A response' };
     }
 
+    // Unwrap: SDK returns { task: Task } or { message: Message }
+    const taskResult = (raw as { task?: A2aTaskResult }).task;
+    const msgResult = (raw as { message?: A2aMessageResult }).message;
+    const unwrapped = taskResult ?? msgResult ?? raw;
+
     // If it's a Task, extract status
-    if (result.status) {
-      const statusMsg = result.status.message?.parts?.[0]?.text ?? '';
+    if ('status' in unwrapped && unwrapped.status) {
+      const st = unwrapped.status as A2aTaskResult['status'];
+      const statusMsg = extractPartsText(st?.message?.parts);
       try {
-        const parsed = JSON.parse(statusMsg);
+        const parsed = JSON.parse(statusMsg) as Partial<AgentBDelegationResult>;
         return {
-          ok: parsed.ok ?? false,
-          taskId: result.id,
+          ok: parsed.ok ?? TASK_COMPLETED_STATES.has(st?.state as never),
+          taskId: String(unwrapped.id ?? taskResult?.id ?? ''),
           orderId: parsed.orderId,
           provider: parsed.provider,
           bToCPaymentTx: parsed.bToCPaymentTx,
+          bToCPaymentRecorded: parsed.bToCPaymentRecorded,
           aToBFulfillmentTx: parsed.aToBFulfillmentTx,
+          aToBFulfillmentRecorded: parsed.aToBFulfillmentRecorded,
           error: parsed.error,
         };
       } catch {
         return {
-          ok: result.status.state === 'completed',
-          taskId: result.id,
+          ok: TASK_COMPLETED_STATES.has(st?.state as never),
+          taskId: String(unwrapped.id ?? taskResult?.id ?? ''),
           orderId: undefined,
-          error: statusMsg || `Task state: ${result.status.state}`,
+          error: statusMsg || `Task state: ${st?.state}`,
         };
       }
     }
 
     // If it's a Message
-    if (result.parts) {
-      const text = result.parts.map((p: { text?: string }) => p.text).filter(Boolean).join('');
+    if ('parts' in unwrapped) {
+      const text = extractPartsText((unwrapped as A2aMessageResult).parts);
       try {
-        const parsed = JSON.parse(text);
+        const parsed = JSON.parse(text) as Partial<AgentBDelegationResult>;
         return {
           ok: parsed.ok ?? false,
-          taskId: undefined,
           orderId: parsed.orderId,
           provider: parsed.provider,
           bToCPaymentTx: parsed.bToCPaymentTx,
+          bToCPaymentRecorded: parsed.bToCPaymentRecorded,
           aToBFulfillmentTx: parsed.aToBFulfillmentTx,
+          aToBFulfillmentRecorded: parsed.aToBFulfillmentRecorded,
           error: parsed.error,
         };
       } catch {
@@ -217,7 +275,7 @@ export async function checkAgentBHealth(): Promise<boolean> {
     const url = await resolveAgentBUrl();
     const res = await fetch(`${url}/health`);
     if (!res.ok) return false;
-    const data = await res.json();
+    const data = (await res.json()) as { ok?: boolean };
     return data.ok === true;
   } catch {
     return false;

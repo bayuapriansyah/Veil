@@ -7,6 +7,7 @@ import { motion } from 'motion/react';
 import {
   ArrowsLeftRight,
   CaretRight,
+  Eye,
   Fingerprint,
   Gauge,
   LineSegments,
@@ -43,6 +44,7 @@ const GROUPS: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { href: '/app/transactions', label: 'Transactions', icon: ArrowsLeftRight, match: '/app/transactions' },
       { href: '/app/audit', label: 'Audit', icon: Fingerprint, match: '/app/audit' },
+      { href: '/app/privacy', label: 'Privacy Model', icon: Eye, match: '/app/privacy' },
       { href: '/app/providers', label: 'Providers', icon: Storefront, match: '/app/providers' },
     ],
   },

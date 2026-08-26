@@ -31,7 +31,7 @@ import {
   Crosshair,
 } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
-import { CANVAS_NODES, OrderDetail, STAGE_NODE_INDEX, atomsUsd } from '../lib/veil-client';
+import { CANVAS_NODES, OrderDetail, STAGE_NODE_INDEX, atomsUsd, useVeilMode } from '../lib/veil-client';
 
 const NODE_W = 190;
 const NODE_H = 78;
@@ -453,6 +453,7 @@ function CanvasStage({ orders }: { orders: OrderDetail[] }): React.ReactElement 
 
 export function EconomyCanvas({ orders }: { orders: OrderDetail[] }): React.ReactElement {
   const [lock, setLock] = useState(false);
+  const mode = useVeilMode();
   const settled = orders.filter((o) => o.ok).length;
 
   return (
@@ -471,8 +472,10 @@ export function EconomyCanvas({ orders }: { orders: OrderDetail[] }): React.Reac
         <div className="px-4 pb-4 text-[11px] leading-relaxed text-mut sm:px-6">
           Drag a node to explore the graph; zoom with the wheel or pinch. Visualized state is the{' '}
           <span className="text-ink">real ledger state</span> behind each transaction — a pulse never moves past a
-          stage the rail has not actually reached. Attestation stages are mirrored in the demo SettlementLedger; no
-          live ASC submission is claimed.
+          stage the rail has not actually reached.{' '}
+          {mode === 'production'
+            ? 'In production mode, attestation stages reflect live Attestcoin proofs verified on Creditcoin CC3.'
+            : 'Attestation stages are mirrored in the demo SettlementLedger; no live ASC submission is claimed.'}
         </div>
       </ReactFlowProvider>
     </div>

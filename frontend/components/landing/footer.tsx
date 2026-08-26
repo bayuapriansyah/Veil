@@ -49,7 +49,7 @@ export function Footer(): React.ReactElement {
 
         <div className="text-xs text-mut">
           <div className="font-mono uppercase tracking-wider">BUIDL CTC 2026 · Fall</div>
-          <div className="mt-1">Attestcoin + Creditcoin, demo mirror</div>
+          <div className="mt-1">Live cross-chain verification · Attestcoin + Creditcoin CC3</div>
         </div>
       </div>
     </footer>

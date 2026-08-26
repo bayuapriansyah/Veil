@@ -123,7 +123,9 @@ export default function DashboardPage(): React.ReactElement {
               </li>
               <li className="flex justify-between gap-2">
                 <span className="text-mut">Settlement</span>
-                <span className="font-mono text-mut">SettlementEngine (mirror · no USDC)</span>
+                <span className={`font-mono ${s.mode === 'production' ? 'text-ok' : 'text-mut'}`}>
+                  {s.mode === 'production' ? 'SettlementEngine (on-chain · CC3)' : 'SettlementEngine (mirror · no USDC)'}
+                </span>
               </li>
               <li className="flex justify-between gap-2">
                 <span className="text-mut">Attestation</span>

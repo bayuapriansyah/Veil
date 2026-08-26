@@ -2,12 +2,13 @@
 
 import { Card, PageHeader } from '@/components/ui';
 import { EconomyCanvas } from '@/components/economy-canvas';
-import { OrderDetail, STAGE_NODE_INDEX, CANVAS_NODES } from '@/lib/veil-client';
+import { OrderDetail, STAGE_NODE_INDEX, CANVAS_NODES, useVeilMode } from '@/lib/veil-client';
 import { usePoll } from '@/lib/use-poll';
 
 export default function CanvasPage(): React.ReactElement {
   const { data } = usePoll<{ ok: boolean; orders: OrderDetail[] }>('/api/veil/orders', { ok: true, orders: [] }, 1500);
   const orders = data.orders ?? [];
+  const mode = useVeilMode();
 
   return (
     <div>
@@ -47,9 +48,20 @@ export default function CanvasPage(): React.ReactElement {
       <div className="mt-5">
         <Card title="Disclaimer">
           <p className="text-sm leading-relaxed text-mut">
-            The raw <span className="font-mono text-ink">attestation</span> step (AttestationReceiver / ASC) is mirrored
-            in the demo SettlementLedger. No live cross-chain attestation or ASC submission is performed or claimed in
-            this demo; the UI never presents a mirrored event as a real on-chain event.
+            {mode === 'production' ? (
+              <>
+                In production mode the raw <span className="font-mono text-ink">attestation</span> step is executed for
+                real: source-chain events on Sepolia are proven via Attestcoin and verified by the
+                AttestationReceiver on Creditcoin CC3, and settlement runs through the on-chain SettlementEngine.
+                The UI only shows a stage as verified once the proof has actually landed.
+              </>
+            ) : (
+              <>
+                The raw <span className="font-mono text-ink">attestation</span> step (AttestationReceiver / ASC) is
+                mirrored in the demo SettlementLedger. No live cross-chain attestation or ASC submission is performed
+                or claimed in this demo; the UI never presents a mirrored event as a real on-chain event.
+              </>
+            )}
           </p>
         </Card>
       </div>

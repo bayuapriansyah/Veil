@@ -157,6 +157,21 @@ submitted to the **AttestationReceiver** ASC on **CC3** (`0x071ff3…3Dccd`):
 | 6 | payment order 1190 (live frontend purchase) | `0xf8c9d6b5…fd01c20` (11529562) | `0x1f9ebf31…9c82756` | 5343211 | `PaymentVerified` |
 | 7 | payment order 400000 (agent-wallet purchase) | `0x7cda07f3…1db243ad43` (11529996) | `0x31559ca2…550c290bb` | 5343570 | `PaymentVerified` |
 | 8 | payment order 500000 (agent-wallet purchase, live audit) | `0xcbd5c56a…1aed9019c` (11530179) | `0xd65f59c5…642640720` | 5343728 | `PaymentVerified` |
+| 9 | payment order 603000 (production-mode frontend) | `0xf5e003e8ad91cc5d28eb8e4fd331d72dacd27b5d658f98985fab96e58cb1578a` (11567962) | `0x4dabb80dc5125e180e603a18455485ab817a397129e0c185b5326c0ded91098e` | — | `PaymentVerified` |
+| 10 | fulfillment order 603000 (production-mode frontend) | `0x2c00a8a59c119ebb34e7876ece134f0bbba8081da3d23a97feea1be4845636db` (11567964) | `0xed4a9fe72cf291a20201e6d518566d654e28a236c6a437e6f3beb515d8cfe46f` | — | `FulfillmentVerified` |
+
+**On-chain settlement milestone.** After row 10's proof landed, the worker
+settled order 603000 through the deployed settlement stack on CC3:
+
+| Step | CC3 tx | Contract |
+|------|--------|----------|
+| settle(603000) | `0xde8315cc4b0bf0d8398d7f5981d8c7c15a90d65e830140a2b3120ba814de6f8e` | `SettlementEngine` `0x197F…8dd7` |
+| escrow release | `0x612d79a4fcbb8b262cd866483d7d89cab51b3cc937650dc54f54a49bae15bb84` | `EscrowManager` `0x42e7…16Bf` |
+
+This is the **first fully on-chain loop**: Sepolia payment → Attestcoin proof →
+ASC verification → SettlementEngine settle, all worker-driven with no manual
+step. The vault record flipped to `verified` automatically via the attach
+callback.
 
 `PaymentVerified` topics decode to `(orderId, agent, provider, amount, serviceId,
 queryId)`; `FulfillmentVerified` to `(orderId, provider, resultHash, queryId)`.

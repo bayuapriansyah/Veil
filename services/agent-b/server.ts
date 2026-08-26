@@ -14,7 +14,7 @@
  *   GET  /health                        — Health check
  */
 import express from 'express';
-import { DefaultRequestHandler, InMemoryTaskStore } from '@a2a-js/sdk/server';
+import { DefaultRequestHandler, InMemoryTaskStore, JsonRpcTransportHandler, ServerCallContext } from '@a2a-js/sdk/server';
 import { AgentCard } from '@a2a-js/sdk';
 import { Wallet, Contract, JsonRpcProvider } from 'ethers';
 import { AgentBExecutor } from './executor';
@@ -29,20 +29,28 @@ const CC3_RPC_URL = process.env.CREDITCOIN_RPC_URL ?? 'https://rpc.cc3-testnet.c
 // Agent B's on-chain identity (populated at registration)
 let agentBRegistryId: number | null = null;
 
-/** Agent B's A2A Agent Card — describes capabilities for discovery. */
+/** Agent B's A2A Agent Card (v1 schema) — describes capabilities for discovery. */
 const AGENT_B_CARD: AgentCard = {
   name: 'VEIL Agent B',
   description: `Procurement agent (wallet: ${AGENT_B_ADDRESS}). Buys verified market-data services from Shop C on behalf of delegating agents. Accepts delegated tasks via A2A protocol, executes purchases on-chain, and returns verified results.`,
-  url: `http://127.0.0.1:${AGENT_B_PORT}`,
+  supportedInterfaces: [{
+    url: `http://127.0.0.1:${AGENT_B_PORT}/a2a`,
+    protocolBinding: 'JSONRPC',
+    tenant: '',
+    protocolVersion: '1.0',
+  }],
+  provider: { organization: 'VEIL', url: 'https://github.com/bayuapriansyah/Veil' },
   version: '1.0.0',
   capabilities: {
     streaming: false,
     pushNotifications: false,
-    stateTransitionHistory: false,
+    extensions: [],
   },
-  authentication: { schemes: [] },
-  defaultInputModes: ['text'],
-  defaultOutputModes: ['text'],
+  securitySchemes: {},
+  securityRequirements: [],
+  signatures: [],
+  defaultInputModes: ['text/plain'],
+  defaultOutputModes: ['text/plain'],
   skills: [
     {
       id: 'veil-procurement',
@@ -50,9 +58,11 @@ const AGENT_B_CARD: AgentCard = {
       description: 'Buys market-data services from Shop C using the VEIL settlement rail (x402 + Attestcoin). Returns verified fulfillment.',
       tags: ['procurement', 'market-data', 'settlement', 'veil'],
       examples: ['buy market data from the eligible provider'],
+      inputModes: ['text/plain'],
+      outputModes: ['text/plain'],
+      securityRequirements: [],
     },
   ],
-  supportsAuthenticatedExtendedCard: false,
 };
 
 export async function startAgentB(): Promise<{ port: number; close: () => Promise<void> }> {
@@ -78,36 +88,12 @@ export async function startAgentB(): Promise<{ port: number; close: () => Promis
     res.json(AGENT_B_CARD);
   });
 
-  // A2A JSON-RPC endpoint
+  // A2A JSON-RPC endpoint (SDK transport handles method routing + validation)
+  const transportHandler = new JsonRpcTransportHandler(requestHandler);
   app.post('/a2a', async (req, res) => {
     try {
-      const { method, params, id } = req.body;
-      const context = { user: { id: 'agent-a' } };
-
-      let result: unknown;
-      switch (method) {
-        case 'message/send':
-          result = await requestHandler.sendMessage(params, context);
-          break;
-        case 'tasks/get':
-          result = await requestHandler.getTask(params, context);
-          break;
-        case 'tasks/cancel':
-          result = await requestHandler.cancelTask(params, context);
-          break;
-        case 'tasks/list':
-          result = await requestHandler.listTasks(params, context);
-          break;
-        default:
-          res.json({
-            jsonrpc: '2.0',
-            id,
-            error: { code: -32601, message: `Method not found: ${method}` },
-          });
-          return;
-      }
-
-      res.json({ jsonrpc: '2.0', id, result });
+      const response = await transportHandler.handle(req.body, new ServerCallContext());
+      res.json(response);
     } catch (err) {
       res.json({
         jsonrpc: '2.0',

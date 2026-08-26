@@ -162,6 +162,31 @@ export function signExactPayment(
  * This is the same verification a facilitator performs against the token's
  * EIP-712 domain. It does NOT confirm the transfer was broadcast on-chain.
  */
+/**
+ * Nonce replay store for `exact` payments. A captured X-PAYMENT header must
+ * never verify twice — EIP-3009 nonces are single-use by design.
+ */
+const usedNonces = new Set<string>();
+
+/** Test hook: clear the replay store. */
+export function clearUsedNonces(): void {
+  usedNonces.clear();
+}
+
+/**
+ * Verify an `exact`/EIP-3009 X-PAYMENT payload.
+ *
+ * Checks (in order):
+ *   1. payTo matches the provider requirement
+ *   2. from is present
+ *   3. authorization time window is valid (validAfter <= now <= validBefore)
+ *   4. nonce has not been used before (replay guard)
+ *   5. EIP-712 signature recovers to the payer
+ *   6. signed amount covers the requirement
+ *
+ * This is the same verification a facilitator performs against the token's
+ * EIP-712 domain. It does NOT confirm the transfer was broadcast on-chain.
+ */
 export function verifyExactPayment(
   payload: X402EIP3009Payload,
   expectedPayTo: string,
@@ -175,6 +200,26 @@ export function verifyExactPayment(
     return { ok: false, error: 'missing from address' };
   }
 
+  // Time-window validation (with 30s clock skew tolerance on validAfter).
+  const nowSec = Math.floor(Date.now() / 1000);
+  const validAfter = Number(authorization.validAfter);
+  const validBefore = Number(authorization.validBefore);
+  if (!Number.isFinite(validAfter) || !Number.isFinite(validBefore)) {
+    return { ok: false, error: 'invalid authorization time window' };
+  }
+  if (nowSec < validAfter - 30) {
+    return { ok: false, error: 'authorization not yet valid' };
+  }
+  if (nowSec > validBefore) {
+    return { ok: false, error: 'authorization expired' };
+  }
+
+  // Replay guard: each EIP-3009 nonce may only be presented once.
+  const nonceKey = `${authorization.from.toLowerCase()}:${authorization.nonce.toLowerCase()}`;
+  if (usedNonces.has(nonceKey)) {
+    return { ok: false, error: 'nonce already used' };
+  }
+
   // Reconstruct the exact EIP-712 digest. To verify we need the token domain;
   // we derive it from the payload.accepted.extra (name/version) + network.
   const chainId = Number(payload.accepted.network.replace('eip155:', ''));
@@ -185,7 +230,6 @@ export function verifyExactPayment(
     verifyingContract: payload.accepted.asset,
   };
   const digest = computeTransferAuthorizationDigest(domain, authorization);
-  const recovered = recoverAddress(digest, signature);
 
   try {
     getBytes(signature); // validates hex length
@@ -193,6 +237,7 @@ export function verifyExactPayment(
     return { ok: false, error: 'invalid signature encoding' };
   }
 
+  const recovered = recoverAddress(digest, signature);
   if (recovered.toLowerCase() !== authorization.from.toLowerCase()) {
     return { ok: false, error: 'signature does not recover to payer' };
   }
@@ -202,6 +247,9 @@ export function verifyExactPayment(
       return { ok: false, error: 'signed amount below requirement' };
     }
   }
+
+  // Commit the nonce only after every check passes.
+  usedNonces.add(nonceKey);
 
   return { ok: true, payer: recovered };
 }

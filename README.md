@@ -139,19 +139,19 @@ what is and is not executed.
 | 2 | **Off-chain worker** — `services/attestation/worker.ts` | Watches Sepolia for those events; waits until the containing block is **attested** on Creditcoin; asks the **Proof Builder** service for a real proof. | **Running live**; retries pending proofs every poll cycle. |
 | 3 | **Proof builder (Attestcoin infra)** — `https://prover.cc3-testnet.creditcoin.network` | `/api/v1/proof-by-tx/{chainKey}/{txHash}` returns the Merkle + continuity proof, gated on `/api/v1/attested-height/{chainKey}`. | **Live** — proofs fetched and used in real submissions. |
 | 4 | **Creditcoin ASC** — `AttestationReceiver.sol` | `execute(...)` computes the query id, calls the **BlockProver precompile `0x0FD2`** `verifyAndEmit(...)`, decodes the verified transaction with `EvmV1Decoder`, checks the emitting address equals the registered `veilSource`, and stores `paymentsVerified` / `verifiedAgent` / `verifiedProvider` / `verifiedServiceId` / `fulfillmentsVerified` / `verifiedResultHash`. | **Deployed** `0x071ff3…3Dccd`; 8/8 proofs verified (see `docs/TESTNET.md` §5.1). |
-| 5 | **Settlement** — `SettlementEngine.sol` | `settle(orderId)` refuses unless: escrow `Locked`, service verified, mandate valid, payment verified, fulfillment verified, payment amount ≥ escrow amount, and the escrow's payer/provider equal the ASC-verified agent/provider. Only then is escrow released and spend debited. | Contract written and compile-verified; exercised via the in-memory mirror in this environment (on-chain engine not deployed). |
+| 5 | **Settlement** — `SettlementEngine.sol` | `settle(orderId)` refuses unless: escrow `Locked`, service verified, mandate valid, payment verified, fulfillment verified, payment amount ≥ escrow amount, and the escrow's payer/provider equal the ASC-verified agent/provider. Only then is escrow released and spend debited. | **Deployed** on CC3 (`0x197F…8dd7`); order 603000 settled live end-to-end (worker-driven, see `docs/TESTNET.md` §5.1). |
 
 ### The honest boundary
 
-- The **full loop (1→4) is executed live** on CC3 Testnet + Sepolia, and the
-  demo `SettlementLedger` mirrors that state machine for the console (step 5 is
-  the in-memory mirror — the on-chain `SettlementEngine` is written but not
-  deployed).
-- In the **frontend demo**, the audit vault's attestation evidence starts sealed
-  with the real `sourceTx` when the purchase recorded on-chain; the **worker**
-  then attaches the Creditcoin proof tx and flips the public status to
-  `verified`. If recording soft-failed (flaky RPC), the record stays `mirror` —
-  the system never claims a live on-chain event that did not happen.
+- The **full loop (1→5) is executed live** on CC3 Testnet + Sepolia: payment →
+  proof → ASC verification → on-chain settlement (order 603000). In
+  `VEIL_MODE=demo`, the console runs the identical state machine against the
+  in-memory `SettlementLedger` instead — clearly labeled.
+- The audit vault's attestation evidence starts sealed with the real
+  `sourceTx` when the purchase recorded on-chain; the **worker** then attaches
+  the Creditcoin proof tx and flips the public status to `verified`. If
+  recording soft-fails (flaky RPC), the record stays `mirror` — the system
+  never claims a live on-chain event that did not happen.
 - Purchases are signed by a **dedicated agent wallet**, separate from the
   deployer wallet, so the operator's deploy key is not the recurring on-chain
   identity (the linkage is only the one-time funding transfer).
@@ -418,30 +418,35 @@ Optional, not-yet-implemented (see the 3-tier table below for status):
 | Capability | Production | Hackathon prototype (this repo runs this) | Optional roadmap |
 |---|---|---|---|
 | Smart contracts (compiled, G-hardened) | ✅ written, compile-verified | — | — |
-| Source-chain events (`VeilSource`) | ✅ contract written | — | deployed on Sepolia |
-| Attestcoin proof generation + ASC verification | ✅ written (`worker`, `execute`) | **mirror** for settlement | live execution (**DONE** — proofs verified on CC3) |
-| Real x402 `exact`/EIP-3009 ECRECOVER crypto | ✅ | ✅ (no USDC settlement claimed) | USDC settlement |
-| `veil-exact` demo adapter | — | ✅ (vendor scheme) | — |
-| Settlement ledger / escrow state machine | ✅ contracts written | ✅ in-memory mirror | on-chain settlement |
+| Source-chain events (`VeilSource`) | ✅ **deployed on Sepolia** (`0xbe2d07…6F93c`) | ✅ live events | — |
+| Attestcoin proof generation + ASC verification | ✅ | ✅ live (proofs verified on CC3) | batch proofs |
+| On-chain settlement (`SettlementEngine` + `EscrowManager` + `MandateManager`) | ✅ **deployed on CC3** | ✅ order 603000 settled live | multi-token settlement |
+| Real x402 `exact`/EIP-3009 ECRECOVER crypto | ✅ incl. amount/expiry/nonce-replay checks | ✅ (no USDC transfer claimed) | on-chain USDC settlement |
+| `veil-exact` demo adapter | — | ✅ (vendor scheme, honestly labeled) | — |
+| A2A delegation (agent→agent, signed) | ✅ signature-verified, replay-guarded | ✅ Agent B via `@a2a-js/sdk` v1 | streaming + push notifications |
+| On-chain agent registry (`VeilRegistry`) | ✅ deployed CC3 | ✅ self-registration + discovery | signed agent cards |
 | AI procurement agent (7 tools) | ✅ | ✅ deterministic planner | live wallet + LLM planner |
 | Audit vault AES-256-GCM + EIP-712 `AuditAccess` | ✅ | ✅ (ephemeral key by default) | KMS keys, durable store |
 | Kill switch | ✅ logic | ✅ | durable revocation record |
-| Reputation gate ≥ 3 | — | ✅ off-chain | on-chain enforcement |
-| Frontend console | — | ✅ | a11y polish, E2E specs |
+| Reputation gate ≥ 3 | — | ✅ off-chain (+ ReputationEngine deployed) | on-chain enforcement |
+| Provider hardening (TLS / API-key auth / rate limit) | ✅ middleware shipped | ✅ env-gated | mTLS, WAF |
+| Frontend console | — | ✅ dual-mode (demo/production badges) | a11y polish, E2E specs |
 
 ## Repository map
 
 | Path | What lives there |
 |------|------------------|
 | `contracts/src/` | Solidity suite: `VeilSource` (source), `AttestationReceiver` (ASC), `SettlementEngine`, `MandateManager`, `EscrowManager`, `ReputationEngine`, `VeilRegistry`, supporting `OwnableLite` / `ReentrancyGuardLite` (see `docs/CONTRACTS.md`) |
-| `contracts/test/` | Forge suite `VeilFoundation.t.sol` (ready; needs Foundry to run) |
-| `services/attestation/` | Worker, proof generation, live-check, integration test, config |
-| `services/provider/` | x402 HTTP rail, payment verification, settlement ledger mirror |
+| `contracts/test/` | Forge suite `VeilFoundation.t.sol` |
+| `services/attestation/` | Worker, proof generation, live-check, error-queue replay, config |
+| `services/provider/` | x402 HTTP rail, EIP-3009 verification, settlement ledger mirror, TLS/auth/rate-limit middleware |
+| `services/agent-b/` | A2A delegation server/client (Agent B), signed delegation verification |
 | `services/procurement/` | Procurement agent (7 tools), shop, deterministic planner |
 | `services/audit/` | Audit vault, EIP-712 signer/verifier, HTTP server |
+| `services/config/` | Demo/production mode resolution + production gate |
 | `services/demo/` | End-to-end sim + flow tests |
-| `frontend/` | Next.js landing `/` + console `/app` |
-| `script/` | `deploy.ts`, `compile-check.js` |
+| `frontend/` | Next.js landing `/` + console `/app` (dual-mode UI) |
+| `script/` | `deploy.ts`, `deploy-settlement.ts`, `compile-check.js` |
 | `docs/` | 10 focused guides + phase notes (see [Documentation](#documentation)) |
 
 ## Getting started
@@ -458,7 +463,7 @@ npm install --prefix frontend
 ```bash
 npm run typecheck            # services TS (tsc --noEmit)
 npm run compile-check        # all contracts compile via solc-js (0.8.23, paris)
-npm test                     # 4 suites / 26 tests
+npm test                     # 6 suites / 47 tests
 cd frontend && npm run typecheck && npm run build
 ```
 
@@ -478,11 +483,34 @@ cd frontend && npm run dev   # http://localhost:3000
 ```
 
 The frontend drives the *real* in-process stack (procurement shop over the HTTP
-rail + audit vault) through `/api/veil/*`. No live chain is touched; attestation
-state here is labeled **mirror**.
+rail + audit vault) through `/api/veil/*`. It runs in one of two honest modes:
+
+- **`VEIL_MODE=demo`** (zero setup): wallets are generated, no chain is touched,
+  attestation state is labeled **mirror** everywhere it appears.
+- **`VEIL_MODE=production`**: purchases record real `AgentPayment` events on
+  Sepolia, the worker proves them on Creditcoin CC3, and the SettlementEngine
+  settles escrow on-chain. The sidebar shows a red `LIVE` badge and fee
+  warnings; attestation labels read *proven on Creditcoin*.
 
 Full developer guide: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) · guided demo:
 [`docs/DEMO.md`](docs/DEMO.md).
+
+### Run in production mode (real chains)
+
+```bash
+# frontend/.env
+VEIL_MODE=production
+SOURCE_CHAIN_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+SOURCE_CHAIN_CONTRACT_ADDRESS=0xbe2d0793344e656690be44b81128BbF0EDa6F93c
+SOURCE_CHAIN_WALLET_PRIVATE_KEY=<funded agent key>
+# ...plus CC3 wiring (see .env.example)
+
+npm run worker        # separate terminal: proves Sepolia events on CC3 + settles
+cd frontend && npm run dev
+```
+
+Each purchase burns a small amount of Sepolia ETH-equivalent plus CC3 CTC for
+proof/settlement gas — fund both wallets first (see `docs/TESTNET.md`).
 
 ### Attestcoin live steps (needs keys + Foundry)
 
@@ -504,13 +532,15 @@ The integration is real and **executed live** against verified infrastructure
 |------|--------|
 | CC3 Testnet RPC + Proof Builder verified (chainId `102031`, Sepolia chainKey `1`) | DONE |
 | Solidity compilation (19 contracts, solc-js) | DONE |
-| TypeScript typecheck + 26 tests / 4 suites | DONE |
+| TypeScript typecheck + 47 tests / 6 suites | DONE |
 | Read-only live-check | DONE |
 | Deploy `VeilSource` on Sepolia | **DONE** — `0xbe2d0793344e656690be44b81128BbF0EDa6F93c` |
 | Deploy `AttestationReceiver` ASC on CC3 | **DONE** — `0x071ff3210EA7619B7065ea24058030464093Dccd` |
-| Generate a real proof + submit to ASC | **DONE** — 8/8 events verified (`PaymentVerified` × 6, `FulfillmentVerified` × 2), including live frontend purchases 1189/1190 and agent-wallet purchases 400000/500000; proofs attached to the audit vault live (see `docs/TESTNET.md` §5.1) |
-| Live `npm run worker` end-to-end | **DONE** — survives RPC resets, retries pending proofs |
-| Foundry `forge test` | BLOCKED — `forge-std` not installed (contracts still compile via solc-js) |
+| Deploy settlement stack (`MandateManager`, `EscrowManager`, `SettlementEngine`) on CC3 | **DONE** — wired to the worker (see `docs/TESTNET.md`) |
+| Generate a real proof + submit to ASC | **DONE** — 10/10 events verified incl. live frontend purchases and agent-wallet purchases; proofs attached to the audit vault live (see `docs/TESTNET.md` §5.1) |
+| Live `npm run worker` end-to-end | **DONE** — survives RPC resets, retries pending proofs, structured logs + health check (:8082) |
+| Full purchase→proof→settlement loop on-chain | **DONE** — order 603000: Sepolia payment + fulfillment events → CC3 proofs → SettlementEngine settle tx `0xde8315…6f8e` |
+| Foundry `forge test` | READY — suite present; run with Foundry installed |
 
 Full evidence table with tx hashes and blocks: [`docs/TESTNET.md`](docs/TESTNET.md).
 

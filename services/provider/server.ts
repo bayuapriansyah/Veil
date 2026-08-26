@@ -182,7 +182,9 @@ export class VeilProvider {
 
     if (scheme === 'exact') {
       const payload = raw as import('./types').X402EIP3009Payload;
-      const result = verifyExactPayment(payload, providerAddress);
+      // Enforce the advertised price — a signed authorization below the
+      // requirement is rejected, not merely recorded.
+      const result = verifyExactPayment(payload, providerAddress, this.opts.pricePerCallAtoms.toString());
       return this._x402GateResult(result, resourceUrl);
     }
     if (scheme === 'veil-exact') {
