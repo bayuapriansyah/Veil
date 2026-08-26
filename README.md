@@ -159,25 +159,44 @@ what is and is not executed.
 
 ## Architecture
 
-```
-             ┌────────────────────────── Creditcoin CC3 Testnet ─────────────────────────┐
-             │  AttestationReceiver (ASC)  MandateManager  EscrowManager  SettlementEngine │
-             │  VeilRegistry  ReputationEngine     precompile 0x0FD2  EvmV1Decoder (lib)    │
-             └──────▲──────────────────────────────────────────────────────────────────────┘
-                    │  execute() ProofBuilder proof
-   Attestcoin worker│
-   ─────────────────┼────────────────────────────────────────────────────────────────────────
-                    │  AgentPayment / FulfillmentReceipt
-            ┌───────┴────────┐  (Sepolia)          ┌──────────────────────────────────────────┐
-            │  VeilSource.sol │                    │  services/ (Node.js)                      │
-            │  (source chain) │                    │  provider: x402 HTTP rail + ledger mirror │
-            └─────────────────┘                    │  procurement: agent (7 tools) + shop      │
-                                                    │  audit: AES-256-GCM vault + signer        │
-                                                    └──────────────▲───────────────────────────┘
-                                                                   │ /api/veil/* (getRuntime singleton)
-                                                    ┌──────────────┴───────────────────────────┐
-                                                    │  frontend/ Next.js console (under /app)    │
-                                                    └───────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph CC3["Creditcoin CC3 Testnet"]
+        ASC[AttestationReceiver<br/>ASC]
+        SE[SettlementEngine]
+        MM[MandateManager]
+        EM[EscrowManager]
+        VR[VeilRegistry]
+        RE[ReputationEngine]
+        PC["precompile 0x0FD2"]
+        DEC[EvmV1Decoder]
+    end
+
+    subgraph Sepolia["Ethereum Sepolia"]
+        VS[VeilSource.sol<br/>source chain]
+    end
+
+    subgraph Services["services/ — Node.js"]
+        Worker[Attestcoin worker]
+        PROV[provider<br/>x402 HTTP rail]
+        PROC[procurement<br/>agent · 7 tools · shop]
+        AUD[audit<br/>AES-256-GCM vault]
+    end
+
+    subgraph Frontend["frontend/ — Next.js"]
+        FE["/app operations console"]
+    end
+
+    VS -->|"AgentPayment · FulfillmentReceipt"| Worker
+    Worker -->|"execute() proof"| ASC
+    PROV -->|"settle(orderId)"| SE
+    SE -->|"verified facts"| ASC
+    SE --> MM
+    SE --> EM
+    VR -.->|"discover agents"| PROC
+    FE -->|"/api/veil/*"| PROV
+    FE -->|"/api/veil/*"| PROC
+    FE -->|"/api/veil/*"| AUD
 ```
 
 Detailed diagrams, networking, and per-component behavior live in
