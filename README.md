@@ -450,7 +450,7 @@ Honest inventory of what VEIL is and is not at this stage:
   reputation threshold enforcement is roadmap.
 - **Single service demo catalog** (market-data … and compute) drives the default
   run; the architecture is general.
-- **No Forge execution** in this environment; the suite is untested-here.
+- **Forge suite** (`contracts/test/VeilFoundation.t.sol`) — 19/19 pass (forge-std installed).
 
 ## Future roadmap
 
