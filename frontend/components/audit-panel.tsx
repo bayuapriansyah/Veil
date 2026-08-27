@@ -180,7 +180,7 @@ export function AuditConsole(): React.ReactElement {
                           status={t.attestationStatus === 'verified' ? 'VERIFIED' : t.attestationStatus === 'proving' || t.attestationStatus === 'a2a-delegation' ? 'PENDING' : 'REJECTED'}
                           label={t.attestationStatus === 'verified' ? 'VERIFIED' : t.attestationStatus === 'proving' ? 'PROVING' : t.attestationStatus === 'a2a-delegation' ? 'A2A DELEGATION' : 'MIRROR'}
                         />
-                        {t.sourceTx && (
+                        {t.sourceTx ? (
                           <a
                             className="font-mono text-[11px] text-mut underline decoration-line/60 underline-offset-2 hover:text-ok"
                             href={`https://sepolia.etherscan.io/tx/${t.sourceTx}`}
@@ -189,8 +189,10 @@ export function AuditConsole(): React.ReactElement {
                           >
                             src {txShort(t.sourceTx)}
                           </a>
+                        ) : (
+                          <span className="font-mono text-[11px] text-mut/50 italic">not recorded</span>
                         )}
-                        {t.attestationTx && (
+                        {t.attestationTx ? (
                           <a
                             className="font-mono text-[11px] text-ok underline decoration-ok/40 underline-offset-2 hover:text-ok"
                             href={`https://blockscout.cc3-testnet.creditcoin.network/tx/${t.attestationTx}`}
@@ -199,6 +201,8 @@ export function AuditConsole(): React.ReactElement {
                           >
                             cc3 {txShort(t.attestationTx)}
                           </a>
+                        ) : (
+                          <span className="font-mono text-[11px] text-mut/50 italic">pending proof</span>
                         )}
                       </div>
                     </td>

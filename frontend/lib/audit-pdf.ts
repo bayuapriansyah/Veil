@@ -6,7 +6,14 @@ import autoTable from 'jspdf-autotable';
 import { AuditTx, txShort } from './veil-client';
 
 function formatDate(ts: number): string {
-  return new Date(ts).toLocaleString('en-US', {
+  return new Date(ts * 1000).toLocaleString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  });
+}
+
+function formatNow(): string {
+  return new Date().toLocaleString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
   });
@@ -52,7 +59,7 @@ function summary(doc: jsPDF, y: number, txs: AuditTx[]): number {
   y += 6;
 
   const verified = txs.filter(t => t.verificationStatus === 'payment-verified fulfillment-verified').length;
-  const settled = txs.filter(t => t.settlementStatus === 'settled').length;
+  const settled = txs.filter(t => t.settlementStatus === 'released' || t.settlementStatus === 'settled').length;
   const proving = txs.filter(t => t.attestationStatus === 'proving').length;
   const mirror = txs.filter(t => t.attestationStatus === 'mirror').length;
 
@@ -94,8 +101,8 @@ function txTable(doc: jsPDF, y: number, txs: AuditTx[]): number {
     t.verificationStatus,
     t.settlementStatus,
     t.attestationStatus.toUpperCase(),
-    t.sourceTx ? txShort(t.sourceTx) : '-',
-    t.attestationTx ? txShort(t.attestationTx) : '-',
+    t.sourceTx ? txShort(t.sourceTx) : 'not recorded',
+    t.attestationTx ? txShort(t.attestationTx) : 'pending',
     formatDate(t.createdAt),
   ]);
 
@@ -143,9 +150,19 @@ function explorerLinks(doc: jsPDF, y: number, txs: AuditTx[]): number {
 
   const lines: string[] = [];
   txs.forEach(t => {
-    if (t.sourceTx) lines.push(`${txShort(t.txId)}  Source   sepolia.etherscan.io/tx/${t.sourceTx}`);
-    if (t.attestationTx) lines.push(`${txShort(t.txId)}  Prove    blockscout.cc3-testnet.creditcoin.network/tx/${t.attestationTx}`);
-    if (t.settlementTx) lines.push(`${txShort(t.txId)}  Settle   blockscout.cc3-testnet.creditcoin.network/tx/${t.settlementTx}`);
+    if (t.sourceTx) {
+      lines.push(`${txShort(t.txId)}  Source   sepolia.etherscan.io/tx/${t.sourceTx}`);
+    } else {
+      lines.push(`${txShort(t.txId)}  Source   not recorded (soft-fail)`);
+    }
+    if (t.attestationTx) {
+      lines.push(`${txShort(t.txId)}  Prove    blockscout.cc3-testnet.creditcoin.network/tx/${t.attestationTx}`);
+    } else {
+      lines.push(`${txShort(t.txId)}  Prove    pending worker proof`);
+    }
+    if (t.settlementTx) {
+      lines.push(`${txShort(t.txId)}  Settle   blockscout.cc3-testnet.creditcoin.network/tx/${t.settlementTx}`);
+    }
   });
 
   if (lines.length === 0) {
@@ -214,7 +231,7 @@ function footer(doc: jsPDF, page: number, total: number): void {
 export async function generateAuditPDF(txs: AuditTx[]): Promise<void> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  let y = header(doc, txs.length, formatDate(Date.now()));
+  let y = header(doc, txs.length, formatNow());
   y = summary(doc, y, txs);
   y = txTable(doc, y, txs);
   y = explorerLinks(doc, y, txs);
