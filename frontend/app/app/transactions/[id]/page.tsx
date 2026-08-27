@@ -99,15 +99,16 @@ export default function TransactionDetailPage(): React.ReactElement {
             </Card>
             <Card title="Evidence">
               {order.resultHash ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <div>
-                    <div className="text-[11px] uppercase tracking-wider text-mut">Result hash</div>
+                    <div className="text-[11px] uppercase tracking-wider text-mut">Fulfillment hash</div>
                     <div className="break-all font-mono text-[11px] text-attest">{order.resultHash}</div>
+                    <p className="mt-1 text-[11px] text-mut/70">SHA-256 of the fulfillment data — stored in the encrypted audit vault, not on-chain.</p>
                   </div>
                   <div>
-                    <div className="text-[11px] uppercase tracking-wider text-mut">Sealed in vault</div>
+                    <div className="text-[11px] uppercase tracking-wider text-mut">Audit trail</div>
                     <Link href="/app/audit" className="font-mono text-xs text-attest hover:underline">
-                      /api/veil/audit
+                      View in Audit →
                     </Link>
                   </div>
                 </div>
