@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AuditTx, AuditorView, api, shortAddress, timeAgo, txShort } from '../lib/veil-client';
+import { generateAuditPDF } from '../lib/audit-pdf';
 import { Card, Empty, StatusChip } from './ui';
 
 interface AuditEnvelope {
@@ -18,6 +19,7 @@ export function AuditConsole(): React.ReactElement {
   const [fields, setFields] = useState('');
   const [disclosure, setDisclosure] = useState<{ ok: boolean; data?: unknown; error?: string } | null>(null);
   const [goodAttempt, setGoodAttempt] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [newAuditor, setNewAuditor] = useState('0x' + 'aa'.repeat(20));
   const [notice, setNotice] = useState('');
 
@@ -74,9 +76,56 @@ export function AuditConsole(): React.ReactElement {
     await refresh();
   };
 
+  const handleExportPDF = async (): Promise<void> => {
+    if (txs.length === 0) return;
+    setExporting(true);
+    try {
+      await generateAuditPDF(txs);
+    } catch (e) {
+      console.error('PDF export failed:', e);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <Card title="Audit Register (public view)" right={<StatusChip status="VERIFIED" label={`${txs.length} sealed txs`} />}>
+      <Card
+        title="Audit Register (public view)"
+        right={
+          <div className="flex items-center gap-3">
+            <StatusChip status="VERIFIED" label={`${txs.length} sealed txs`} />
+            {txs.length > 0 && (
+              <button
+                onClick={() => void handleExportPDF()}
+                disabled={exporting}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 text-xs text-mut transition-colors hover:text-ink disabled:opacity-50"
+              >
+                {exporting ? (
+                  <>
+                    <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Exporting…
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                      <polyline points="14,2 14,8 20,8" />
+                      <line x1="16" y1="13" x2="8" y2="13" />
+                      <line x1="16" y1="17" x2="8" y2="17" />
+                      <polyline points="10,9 9,9 8,9" />
+                    </svg>
+                    Export PDF
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        }
+      >
         {notice && <p className="mb-3 text-xs text-bad">{notice}</p>}
         {txs.length === 0 ? (
           <Empty message="No sealed transactions yet. Run a purchase and it lands here immediately." />
