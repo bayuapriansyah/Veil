@@ -25,14 +25,14 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
   const [tab, setTab] = useState<'direct' | 'delegate'>('direct');
   const [task, setTask] = useState(DIRECT_SUGGESTED[0]);
   const [busy, setBusy] = useState(false);
-  const [last, setLast] = useState<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string } | null>(null);
+  const [last, setLast] = useState<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null } | null>(null);
   const [lastDelegate, setLastDelegate] = useState<DelegateResult | null>(null);
   const mode = useVeilMode();
 
   const run = async (): Promise<void> => {
     setBusy(true);
     try {
-      const body = await api<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string }>('/api/veil/purchase', {
+      const body = await api<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null }>('/api/veil/purchase', {
         method: 'POST',
         body: JSON.stringify({ task }),
       });

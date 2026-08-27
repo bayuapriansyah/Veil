@@ -24,8 +24,8 @@ export interface OrderDetail {
   resultHash?: string;
   error?: string;
   escrowStatus: 'None' | 'Locked' | 'Released' | 'Refunded';
-  onchainRecordTxHash?: string;
-  fulfillmentTxHash?: string;
+  onchainRecordTxHash?: string | null;
+  fulfillmentTxHash?: string | null;
   stages: TimelineStage[];
 }
 

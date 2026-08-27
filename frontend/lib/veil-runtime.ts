@@ -46,9 +46,9 @@ export interface RuntimeOrder {
   error?: string;
   escrowStatus: 'None' | 'Locked' | 'Released' | 'Refunded';
   /** Live source-chain AgentPayment tx hash, when the on-chain record succeeded. */
-  onchainRecordTxHash?: string;
+  onchainRecordTxHash?: string | null;
   /** Live source-chain FulfillmentReceipt tx hash (provider-signed), when recorded. */
-  fulfillmentTxHash?: string;
+  fulfillmentTxHash?: string | null;
   stages: TimelineStage[];
 }
 
@@ -169,7 +169,7 @@ class VeilRuntime {
     return SERVICE_LABELS[serviceId] ?? SERVICE_LABELS[SERVICE_MARKET_DATA];
   }
 
-  async purchase(task: string): Promise<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string }> {
+  async purchase(task: string): Promise<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null }> {
     await this.start();
     if (this.killSwitch) return { ok: false, reason: 'kill switch engaged — mandate revoked, purchases refused' };
     const outcome = await this.agent.run(task);
@@ -215,15 +215,15 @@ class VeilRuntime {
       createdAt: Date.now(),
       resultHash,
       escrowStatus: escrowStatus === 2 ? 'Released' : escrowStatus === 1 ? 'Locked' : escrowStatus === 3 ? 'Refunded' : 'None',
-      onchainRecordTxHash: onchainTxHashOf(outcome),
-      fulfillmentTxHash: fulfillmentTx.ok && 'txHash' in fulfillmentTx ? fulfillmentTx.txHash : undefined,
+      onchainRecordTxHash: onchainTxHashOf(outcome) ?? null,
+      fulfillmentTxHash: fulfillmentTx.ok && 'txHash' in fulfillmentTx ? fulfillmentTx.txHash : null,
       stages: successStages(settle.ok ? 'SETTLED' : 'PENDING'),
     };
     this.orders.unshift(order);
 
     // Record into the audit vault (encrypted at rest; public view only).
     this.recordAudit(order, outcome);
-    return { ok: true, orderId: outcome.orderId, onchainRecordTxHash: order.onchainRecordTxHash };
+    return { ok: true, orderId: outcome.orderId, onchainRecordTxHash: order.onchainRecordTxHash, fulfillmentTxHash: order.fulfillmentTxHash };
   }
 
   /**
@@ -310,8 +310,8 @@ class VeilRuntime {
       createdAt: now,
       resultHash: delegation.aToBFulfillmentTx,
       escrowStatus: 'Released',
-      onchainRecordTxHash: aToBPaymentTx,
-      fulfillmentTxHash: delegation.aToBFulfillmentTx,
+      onchainRecordTxHash: aToBPaymentTx ?? null,
+      fulfillmentTxHash: delegation.aToBFulfillmentTx ?? null,
       stages: successStages('SETTLED'),
     });
 
@@ -340,7 +340,7 @@ class VeilRuntime {
       verificationStatus: 'payment-verified fulfillment-verified',
       policyStatus: 'mandate-valid budget-compliant',
       settlementStatus: order.escrowStatus.toLowerCase(),
-      sourceTx: onchain,
+      sourceTx: onchain ?? undefined,
       attestationStatus: onchain ? 'proving' : 'mirror',
       protectedData: {
         agent: this.shop.agentAddress,
@@ -354,7 +354,7 @@ class VeilRuntime {
           expiresAt: this.currentMandateExpiry(),
         },
         paymentEvidence: { orderId: order.orderId, paymentVerified: true, scheme: 'veil-exact', recordedAt: order.createdAt },
-        fulfillmentEvidence: { resultHash: order.resultHash ?? '0x0', fulfillmentVerified: true, fulfillmentTx: order.fulfillmentTxHash, recordedAt: order.createdAt + 1 },
+        fulfillmentEvidence: { resultHash: order.resultHash ?? '0x0', fulfillmentVerified: true, fulfillmentTx: order.fulfillmentTxHash ?? undefined, recordedAt: order.createdAt + 1 },
         attestationEvidence,
         settlementEvidence: { escrowStatus: order.escrowStatus, settlementRef: order.resultHash ?? '0x0', recordedAt: order.createdAt + 3 },
       },
