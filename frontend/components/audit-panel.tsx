@@ -128,8 +128,8 @@ export function AuditConsole(): React.ReactElement {
                     <td className="py-3.5 pr-5">
                       <div className="flex flex-col gap-1">
                         <StatusChip
-                          status={t.attestationStatus === 'verified' ? 'VERIFIED' : t.attestationStatus === 'proving' ? 'PENDING' : 'REJECTED'}
-                          label={t.attestationStatus === 'verified' ? 'VERIFIED' : t.attestationStatus === 'proving' ? 'PROVING' : 'MIRROR'}
+                          status={t.attestationStatus === 'verified' ? 'VERIFIED' : t.attestationStatus === 'proving' || t.attestationStatus === 'a2a-delegation' ? 'PENDING' : 'REJECTED'}
+                          label={t.attestationStatus === 'verified' ? 'VERIFIED' : t.attestationStatus === 'proving' ? 'PROVING' : t.attestationStatus === 'a2a-delegation' ? 'A2A DELEGATION' : 'MIRROR'}
                         />
                         {t.sourceTx && (
                           <a

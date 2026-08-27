@@ -62,7 +62,7 @@ export interface AuditTx {
   createdAt: number;
   encrypted: boolean;
   sourceTx?: string;
-  attestationStatus: 'mirror' | 'proving' | 'verified';
+  attestationStatus: 'mirror' | 'proving' | 'verified' | 'a2a-delegation';
   attestationTx?: string;
   settlementTx?: string;
   escrowTx?: string;
