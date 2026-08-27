@@ -126,6 +126,7 @@ export async function startAgentB(): Promise<{ port: number; close: () => Promis
       console.log(`[agent-b] Address: ${AGENT_B_ADDRESS}`);
 
       // Self-register on VeilRegistry (CC3) if configured
+      // Check if already registered to avoid duplicate entries on restart.
       if (VEIL_REGISTRY_ADDRESS && AGENT_B_PRIVATE_KEY) {
         try {
           const provider = new JsonRpcProvider(CC3_RPC_URL);
@@ -140,6 +141,20 @@ export async function startAgentB(): Promise<{ port: number; close: () => Promis
             ],
             wallet,
           );
+
+          // Check if this wallet is already registered (avoid duplicate entries on restart)
+          const existingIds: bigint[] = await registry.listActiveAgents();
+          for (const id of existingIds) {
+            const owner = await registry.agentOwner(id);
+            if (owner.toLowerCase() === AGENT_B_ADDRESS.toLowerCase()) {
+              agentBRegistryId = Number(id);
+              console.log(`[agent-b] Already registered: agentId=${agentBRegistryId}, wallet=${AGENT_B_ADDRESS}`);
+              resolve({ port: AGENT_B_PORT, close: () => new Promise<void>((res) => server.close(() => res())) });
+              return;
+            }
+          }
+
+          // Not registered — proceed with registration
           const endpoint = `http://127.0.0.1:${AGENT_B_PORT}`;
           const cardHash = 'QmAgentB'; // placeholder — could be IPFS hash
           const reputationRef = '0x' + '00'.repeat(32);

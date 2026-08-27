@@ -52,7 +52,18 @@ export async function GET(): Promise<NextResponse> {
         };
       }),
     );
-    return NextResponse.json({ ok: true, agents, registryAddress: VEIL_REGISTRY_ADDRESS });
+    // Deduplicate by owner address — keep only the most recent registration per wallet.
+    // This handles the case where the same agent restarted and re-registered multiple times.
+    const seen = new Map<string, typeof agents[0]>();
+    for (const a of agents) {
+      const key = a.owner.toLowerCase();
+      const existing = seen.get(key);
+      if (!existing || a.registeredAt > existing.registeredAt) {
+        seen.set(key, a);
+      }
+    }
+    const uniqueAgents = Array.from(seen.values());
+    return NextResponse.json({ ok: true, agents: uniqueAgents, registryAddress: VEIL_REGISTRY_ADDRESS });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
