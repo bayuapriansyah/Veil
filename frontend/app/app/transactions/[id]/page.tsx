@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft } from '@phosphor-icons/react';
 import { Card, PageHeader, StatusChip } from '@/components/ui';
 import { TransactionTimeline } from '@/components/transaction-timeline';
-import { OrderDetail, atomsUsd, timeAgo } from '@/lib/veil-client';
+import { OrderDetail, SEPOLIA_EXPLORER, atomsUsd, timeAgo, txShort } from '@/lib/veil-client';
 import { usePoll } from '@/lib/use-poll';
 
 export default function TransactionDetailPage(): React.ReactElement {
@@ -68,6 +68,33 @@ export default function TransactionDetailPage(): React.ReactElement {
                   <dt className="text-mut">Escrow</dt>
                   <dd className="font-mono text-attest">{order.escrowStatus}</dd>
                 </div>
+                {(order.onchainRecordTxHash || order.fulfillmentTxHash) && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-mut">On-chain</dt>
+                    <dd className="flex flex-col items-end gap-1">
+                      {order.onchainRecordTxHash && (
+                        <a
+                          href={`${SEPOLIA_EXPLORER}${order.onchainRecordTxHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-[11px] text-mut underline decoration-line/60 underline-offset-2 hover:text-ok"
+                        >
+                          src {txShort(order.onchainRecordTxHash)} ↗
+                        </a>
+                      )}
+                      {order.fulfillmentTxHash && (
+                        <a
+                          href={`${SEPOLIA_EXPLORER}${order.fulfillmentTxHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-[11px] text-mut underline decoration-line/60 underline-offset-2 hover:text-ok"
+                        >
+                          fulfil {txShort(order.fulfillmentTxHash)} ↗
+                        </a>
+                      )}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </Card>
             <Card title="Evidence">

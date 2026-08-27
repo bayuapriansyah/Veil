@@ -24,8 +24,13 @@ export interface OrderDetail {
   resultHash?: string;
   error?: string;
   escrowStatus: 'None' | 'Locked' | 'Released' | 'Refunded';
+  onchainRecordTxHash?: string;
+  fulfillmentTxHash?: string;
   stages: TimelineStage[];
 }
+
+export const SEPOLIA_EXPLORER = 'https://sepolia.etherscan.io/tx/';
+export const CC3_EXPLORER = 'https://blockscout.cc3-testnet.creditcoin.network/tx/';
 
 export interface MandateView {
   mandateId: number;

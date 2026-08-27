@@ -1,12 +1,25 @@
 'use client';
 
 import Link from 'next/link';
-import { OrderDetail, atomsUsd, timeAgo } from '../lib/veil-client';
+import { OrderDetail, SEPOLIA_EXPLORER, atomsUsd, timeAgo, txShort } from '../lib/veil-client';
 import { Empty, StatusChip, TxId } from './ui';
 
 function overall(order: OrderDetail): OrderDetail['stages'][number]['status'] {
   if (order.stages.length === 0) return 'PENDING';
   return order.stages[order.stages.length - 1].status;
+}
+
+function ExplorerLink({ href, label }: { href: string; label: string }): React.ReactElement {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="font-mono text-[10px] text-mut underline decoration-line/60 underline-offset-2 hover:text-ok"
+    >
+      {label} ↗
+    </a>
+  );
 }
 
 export function OrdersTable({ orders }: { orders: OrderDetail[] }): React.ReactElement {
@@ -28,12 +41,24 @@ export function OrdersTable({ orders }: { orders: OrderDetail[] }): React.ReactE
           {orders.map((o) => (
             <tr key={o.orderId} className="group border-b border-line/60 last:border-0 hover:bg-panel2/60">
               <td className="py-3.5 pr-5">
-                <Link
-                  href={`/app/transactions/${o.orderId}`}
-                  className="text-ok transition-colors hover:underline"
-                >
-                  <TxId id={o.orderId} />
-                </Link>
+                <div className="flex flex-col gap-1">
+                  <Link
+                    href={`/app/transactions/${o.orderId}`}
+                    className="text-ok transition-colors hover:underline"
+                  >
+                    <TxId id={o.orderId} />
+                  </Link>
+                  {(o.onchainRecordTxHash || o.fulfillmentTxHash) && (
+                    <div className="flex flex-col gap-0.5">
+                      {o.onchainRecordTxHash && (
+                        <ExplorerLink href={`${SEPOLIA_EXPLORER}${o.onchainRecordTxHash}`} label={`src ${txShort(o.onchainRecordTxHash)}`} />
+                      )}
+                      {o.fulfillmentTxHash && (
+                        <ExplorerLink href={`${SEPOLIA_EXPLORER}${o.fulfillmentTxHash}`} label={`fulfil ${txShort(o.fulfillmentTxHash)}`} />
+                      )}
+                    </div>
+                  )}
+                </div>
               </td>
               <td className="py-3.5 pr-5 text-mut">{o.serviceLabel}</td>
               <td className="py-3.5 pr-5">

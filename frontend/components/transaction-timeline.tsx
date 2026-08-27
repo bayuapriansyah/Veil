@@ -1,7 +1,18 @@
 'use client';
 
-import { OrderDetail, atomsUsd } from '../lib/veil-client';
+import { OrderDetail, SEPOLIA_EXPLORER, CC3_EXPLORER, atomsUsd, txShort } from '../lib/veil-client';
 import { Card, StatusChip } from './ui';
+
+function stageExplorerLink(stKey: string, order: OrderDetail): string | null {
+  switch (stKey) {
+    case 'payment':
+      return order.onchainRecordTxHash ? `${SEPOLIA_EXPLORER}${order.onchainRecordTxHash}` : null;
+    case 'fulfillment':
+      return order.fulfillmentTxHash ? `${SEPOLIA_EXPLORER}${order.fulfillmentTxHash}` : null;
+    default:
+      return null;
+  }
+}
 
 /**
  * Authorization -> Payment -> PaymentAttestation -> Fulfillment ->
@@ -16,6 +27,7 @@ export function TransactionTimeline({ order }: { order: OrderDetail }): React.Re
           const done = st.status === 'VERIFIED' || st.status === 'SETTLED';
           const bad = st.status === 'FAILED' || st.status === 'REJECTED';
           const last = i === order.stages.length - 1;
+          const explorerHref = stageExplorerLink(st.key, order);
           return (
             <li key={st.key} className="relative flex gap-5 pb-7 last:pb-0">
               {!last && (
@@ -48,6 +60,16 @@ export function TransactionTimeline({ order }: { order: OrderDetail }): React.Re
                   )}
                 </div>
                 {st.note && <p className="mt-1.5 text-sm leading-relaxed text-mut">{st.note}</p>}
+                {explorerHref && (
+                  <a
+                    href={explorerHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1.5 inline-block font-mono text-[11px] text-mut underline decoration-line/60 underline-offset-2 hover:text-ok"
+                  >
+                    ↳ {txShort(explorerHref.split('/tx/')[1])} (Sepolia) ↗
+                  </a>
+                )}
                 {order.error && (st.status === 'REJECTED' || st.status === 'FAILED') && (
                   <p className="mt-2 rounded-lg border border-bad/25 bg-bad/10 px-3 py-2 font-mono text-[13px] text-bad">
                     {order.error}
