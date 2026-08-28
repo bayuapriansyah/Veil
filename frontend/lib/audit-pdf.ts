@@ -156,12 +156,12 @@ function explorerLinks(doc: jsPDF, y: number, txs: AuditTx[]): number {
       lines.push(`${txShort(t.txId)}  Source   not recorded (soft-fail)`);
     }
     if (t.attestationTx) {
-      lines.push(`${txShort(t.txId)}  Prove    blockscout.cc3-testnet.creditcoin.network/tx/${t.attestationTx}`);
+      lines.push(`${txShort(t.txId)}  Prove    creditcoin-testnet.blockscout.com/tx/${t.attestationTx}`);
     } else {
       lines.push(`${txShort(t.txId)}  Prove    pending worker proof`);
     }
     if (t.settlementTx) {
-      lines.push(`${txShort(t.txId)}  Settle   blockscout.cc3-testnet.creditcoin.network/tx/${t.settlementTx}`);
+      lines.push(`${txShort(t.txId)}  Settle   creditcoin-testnet.blockscout.com/tx/${t.settlementTx}`);
     }
   });
 

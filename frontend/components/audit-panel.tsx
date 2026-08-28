@@ -165,7 +165,7 @@ export function AuditConsole(): React.ReactElement {
                         {t.settlementTx && (
                           <a
                             className="font-mono text-[11px] text-ok underline decoration-ok/40 underline-offset-2 hover:text-ok"
-                            href={`https://blockscout.cc3-testnet.creditcoin.network/tx/${t.settlementTx}`}
+                            href={`https://creditcoin-testnet.blockscout.com/tx/${t.settlementTx}`}
                             target="_blank"
                             rel="noreferrer"
                           >
@@ -195,7 +195,7 @@ export function AuditConsole(): React.ReactElement {
                         {t.attestationTx ? (
                           <a
                             className="font-mono text-[11px] text-ok underline decoration-ok/40 underline-offset-2 hover:text-ok"
-                            href={`https://blockscout.cc3-testnet.creditcoin.network/tx/${t.attestationTx}`}
+                            href={`https://creditcoin-testnet.blockscout.com/tx/${t.attestationTx}`}
                             target="_blank"
                             rel="noreferrer"
                           >

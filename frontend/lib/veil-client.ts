@@ -30,7 +30,7 @@ export interface OrderDetail {
 }
 
 export const SEPOLIA_EXPLORER = 'https://sepolia.etherscan.io/tx/';
-export const CC3_EXPLORER = 'https://blockscout.cc3-testnet.creditcoin.network/tx/';
+export const CC3_EXPLORER = 'https://creditcoin-testnet.blockscout.com/tx/';
 
 export interface MandateView {
   mandateId: number;

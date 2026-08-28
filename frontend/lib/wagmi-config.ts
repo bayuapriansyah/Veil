@@ -15,7 +15,7 @@ export const cc3 = {
   blockExplorers: {
     default: {
       name: 'Blockscout',
-      url: 'https://blockscout.cc3-testnet.creditcoin.network',
+      url: 'https://creditcoin-testnet.blockscout.com',
     },
   },
 } as const;
