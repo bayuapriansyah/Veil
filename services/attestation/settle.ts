@@ -93,16 +93,29 @@ export async function trySettleOrder(config: VeilConfig, ccProvider: JsonRpcApiP
 
     const escrowManager = new Contract(process.env.ESCROW_MANAGER_ADDRESS!, ESCROW_MANAGER_ABI, ccProvider);
     const status = (await escrowManager.escrowStatus(id)) as bigint;
-    if (status !== 0n) {
-      // Already locked/released/refunded — never settle twice.
-      return { ok: false, done: true, error: `escrow already in state ${status}` };
+
+    const operatorWallet = new Wallet(config.walletPrivateKey, ccProvider);
+    const engine = new Contract(process.env.SETTLEMENT_ENGINE_ADDRESS!, SETTLEMENT_ENGINE_ABI, operatorWallet);
+
+    if (status === 2n || status === 3n) {
+      return { ok: false, done: true, error: `escrow already in state ${status} (released/refunded)` };
+    }
+
+    if (status === 1n) {
+      const settleTx = await engine.settle(id);
+      const settleReceipt = await settleTx.wait();
+      return {
+        ok: true,
+        done: true,
+        escrowTxHash: undefined,
+        settlementTxHash: settleReceipt.hash,
+      };
     }
 
     const amount = (await receiver.verifiedPaymentAmount(id)) as bigint;
     const serviceId = (await receiver.verifiedServiceIdOf(id)) as string;
     const provider = (await receiver.verifiedProviderOf(id)) as string;
     const agentWallet = new Wallet(agentKey, ccProvider);
-    const operatorWallet = new Wallet(config.walletPrivateKey, ccProvider);
 
     // 1. Mandate (owner = operator) covering exactly the verified amount.
     const mandateManager = new Contract(process.env.MANDATE_MANAGER_ADDRESS!, MANDATE_MANAGER_ABI, operatorWallet);
@@ -118,7 +131,6 @@ export async function trySettleOrder(config: VeilConfig, ccProvider: JsonRpcApiP
     const escrowReceipt = await escrowTx.wait();
 
     // 3. Operator settles: releases CTC to the provider.
-    const engine = new Contract(process.env.SETTLEMENT_ENGINE_ADDRESS!, SETTLEMENT_ENGINE_ABI, operatorWallet);
     const settleTx = await engine.settle(id);
     const settleReceipt = await settleTx.wait();
 

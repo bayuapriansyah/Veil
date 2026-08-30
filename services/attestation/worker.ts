@@ -343,6 +343,8 @@ async function main() {
                 );
                 if (res.ok) {
                   log('info', 'Order settled after ZK receipt', { orderId, settle: res.settlementTxHash });
+                } else {
+                  log('warn', 'Settle skipped (after ZK)', { orderId, error: res.error });
                 }
                 if (res.done) settledOrders.add(orderId);
               }

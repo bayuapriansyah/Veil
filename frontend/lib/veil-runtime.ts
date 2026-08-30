@@ -21,7 +21,8 @@ import { SERVICE_COMPUTE, SERVICE_MARKET_DATA } from '../../services/provider/ad
 import { createProcurementShop, OPERATOR, PROVIDER } from '../../services/procurement/shop';
 import { ProcurementAgent } from '../../services/procurement/agent';
 import { isDemoMode, resolveVeilMode, type VeilMode } from '../../services/config/mode';
-import { recordAgentPayment, recordFulfillment } from '../../services/attestation/record';
+import { recordAgentPayment, recordFulfillment, recordZKReceipt } from '../../services/attestation/record';
+import { generateZKReceipt, computeResultData, randomSalt } from '../../services/security/zk-prover';
 import { delegateToAgentB, checkAgentBHealth, resolveAgentBAddress, resolveAgentBUrl, type AgentBDelegationResult } from '../../services/agent-b/client';
 
 export const PRICE_ATOMS = BigInt('1000000000000000'); // 0.001 per call
@@ -215,6 +216,28 @@ class VeilRuntime {
       },
       process.env.SOURCE_CHAIN_PROVIDER_PRIVATE_KEY,
     ).catch((err: unknown) => ({ ok: false, error: String((err as Error)?.message ?? err) }));
+
+    // Generate ZK receipt and record on-chain (soft-fail)
+    let zkProofHash: string | undefined;
+    let zkTxHash: string | null = null;
+    try {
+      const payloadRef = SERVICE_MARKET_DATA;
+      const resultData = computeResultData(payloadRef);
+      const salt = randomSalt();
+      const zkResult = await generateZKReceipt(orderId, resultData, salt, outcome.provider!, outcome.serviceId!);
+      if (zkResult.ok && zkResult.zkProofHash) {
+        zkProofHash = zkResult.zkProofHash;
+        const zkRecord = await recordZKReceipt({
+          orderId,
+          provider: outcome.provider!,
+          zkProofHash,
+          serviceId: outcome.serviceId!,
+        }, process.env.SOURCE_CHAIN_PROVIDER_PRIVATE_KEY);
+        if (zkRecord.ok && zkRecord.txHash) {
+          zkTxHash = zkRecord.txHash;
+        }
+      }
+    } catch { /* best-effort ZK recording */ }
 
     const order: RuntimeOrder = {
       orderId: outcome.orderId,

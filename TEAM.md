@@ -10,7 +10,7 @@
 
 | Name | Role | GitHub |
 |---|---|---|
-| Bayu Priansyah | Builder (architecture, Solidity, Attestcoin integration, console) | [bayuapriansyah](https://github.com/bayuapriansyah) |
+| Bayu Apriansyah Putra | Builder (architecture, Solidity, Attestcoin integration, console) | [bayuapriansyah](https://github.com/bayuapriansyah) |
 
 ## What we built
 
