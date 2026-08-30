@@ -20,8 +20,10 @@ import { isDemoMode } from '../config/mode';
 const SOURCE_ABI = [
   'function recordAgentPayment(uint256 orderId, address provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef) external',
   'function recordFulfillment(uint256 orderId, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef) external',
+  'function recordZKReceipt(uint256 orderId, address provider, bytes32 zkProofHash, bytes32 serviceId) external',
   'event AgentPayment(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef)',
   'event FulfillmentReceipt(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef)',
+  'event ZKReceiptRecorded(uint256 indexed orderId, address indexed provider, bytes32 indexed zkProofHash, bytes32 serviceId, uint256 timestamp)',
 ];
 
 export interface OnchainRecordResult {
@@ -167,11 +169,66 @@ export async function recordFulfillment(
   }
 }
 
+/**
+ * Record a ZK receipt on the live VeilSource contract (soft-fail).
+ * Only the provider recorded for the order may call this — pass the
+ * provider's private key as `signerPrivateKey`.
+ */
+export async function recordZKReceipt(
+  opts: {
+    orderId: bigint;
+    provider: string;
+    zkProofHash: string;
+    serviceId: string;
+  },
+  signerPrivateKey?: string,
+): Promise<OnchainRecordResult> {
+  const env = sourceChainEnv();
+  if (isDemoMode()) {
+    return { ok: false, error: 'demo mode — on-chain recording disabled (mirror)' };
+  }
+  if (!env.contractAddress || !env.privateKey) {
+    return { ok: false, error: 'on-chain record disabled: SOURCE_CHAIN_CONTRACT_ADDRESS / SOURCE_CHAIN_WALLET_PRIVATE_KEY not set' };
+  }
+  try {
+    const provider = new JsonRpcProvider(env.rpcUrl);
+    const wallet = new Wallet(signerPrivateKey ?? env.privateKey, provider);
+    const contract = new Contract(env.contractAddress, SOURCE_ABI, wallet);
+    const tx = await contract.recordZKReceipt(
+      opts.orderId,
+      opts.provider,
+      opts.zkProofHash,
+      opts.serviceId,
+    );
+    try {
+      const receipt = await tx.wait(1, 8_000);
+      return { ok: true, txHash: receipt.hash };
+    } catch {
+      return { ok: true, txHash: tx.hash };
+    }
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    appendError({
+      ts: new Date().toISOString(),
+      type: 'zk-receipt',
+      orderId: opts.orderId.toString(),
+      error,
+      opts: {
+        orderId: opts.orderId.toString(),
+        provider: opts.provider,
+        zkProofHash: opts.zkProofHash,
+        serviceId: opts.serviceId,
+      },
+    });
+    return { ok: false, error };
+  }
+}
+
 // --- Error queue for failed recordings ------------------------------------ //
 
 export interface FailedRecord {
   ts: string;
-  type: 'payment' | 'fulfillment';
+  type: 'payment' | 'fulfillment' | 'zk-receipt';
   orderId: string;
   error: string;
   opts: Record<string, string>;

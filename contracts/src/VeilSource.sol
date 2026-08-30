@@ -55,6 +55,20 @@ contract VeilSource is Ownable, ReentrancyGuard {
         address scanner
     );
 
+    // event ZKReceiptRecorded(
+    //     uint256 indexed orderId,
+    //     address indexed provider,
+    //     bytes32 indexed zkProofHash, // data
+    //     bytes32 serviceId,           // data
+    //     uint256 timestamp);          // data
+    event ZKReceiptRecorded(
+        uint256 indexed orderId,
+        address indexed provider,
+        bytes32 indexed zkProofHash,
+        bytes32 serviceId,
+        uint256 timestamp
+    );
+
     // ------------------------------------------------------------------ //
     //  State (minimal by design)                                          //
     // ------------------------------------------------------------------ //
@@ -63,6 +77,8 @@ contract VeilSource is Ownable, ReentrancyGuard {
     mapping(address => bytes32) public providerBytecodeHash;
     mapping(address => uint8) public providerRiskScore;
     mapping(address => bool) public providerScanPassed;
+    mapping(uint256 => bytes32) public orderZKProofHash;
+    mapping(uint256 => uint256) public orderZKTimestamp;
 
     error NotFound();
     error OrderAlreadyPaid();
@@ -137,6 +153,29 @@ contract VeilSource is Ownable, ReentrancyGuard {
         providerScanPassed[provider] = passedThreshold;
 
         emit SecurityScanRecorded(provider, bytecodeHash, riskScore, passedThreshold, msg.sender);
+    }
+
+    /// @notice Records a ZK receipt for an order, proving computation correctness
+    ///         without revealing the actual data. Emits ZKReceiptRecorded for
+    ///         Attestcoin cross-chain verification.
+    /// @param orderId Unique order id.
+    /// @param provider Address of the provider that generated the ZK proof.
+    /// @param zkProofHash Poseidon commitment: Poseidon(resultData, salt).
+    /// @param serviceId Identifier of the service/category delivered.
+    function recordZKReceipt(
+        uint256 orderId,
+        address provider,
+        bytes32 zkProofHash,
+        bytes32 serviceId
+    ) external {
+        if (provider == address(0)) revert InvalidAddress();
+        if (orderProvider[orderId] == address(0)) revert NotFound();
+        if (orderProvider[orderId] != provider) revert NotProvider();
+
+        orderZKProofHash[orderId] = zkProofHash;
+        orderZKTimestamp[orderId] = block.timestamp;
+
+        emit ZKReceiptRecorded(orderId, provider, zkProofHash, serviceId, block.timestamp);
     }
 
     /// @notice Whether an order has been paid (per this source contract).

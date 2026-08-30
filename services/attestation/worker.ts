@@ -27,12 +27,14 @@ const ATTESTATION_RECEIVER_EXECUTE_ABI = [
   'event PaymentVerified(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 queryId)',
   'event FulfillmentVerified(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 queryId)',
   'event SecurityScanVerified(uint256 indexed providerKey, uint8 riskScore, bool passedThreshold, bytes32 queryId)',
+  'event ZKReceiptVerified(uint256 indexed orderId, address indexed provider, bytes32 zkProofHash, bytes32 queryId)',
 ];
 
 const VEIL_SOURCE_ABI = [
   'event AgentPayment(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef)',
   'event FulfillmentReceipt(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef)',
   'event SecurityScanRecorded(address indexed provider, bytes32 indexed bytecodeHash, uint8 riskScore, bool passedThreshold, address scanner)',
+  'event ZKReceiptRecorded(uint256 indexed orderId, address indexed provider, bytes32 indexed zkProofHash, bytes32 serviceId, uint256 timestamp)',
 ];
 
 // --- Structured logging ---------------------------------------------------- //
@@ -259,10 +261,11 @@ async function main() {
         fromBlock = latest;
       }
 
-      const [payments, fulfillments, securityScans] = await Promise.all([
+      const [payments, fulfillments, securityScans, zkReceipts] = await Promise.all([
         veilSource.queryFilter('AgentPayment', fromBlock, latest),
         veilSource.queryFilter('FulfillmentReceipt', fromBlock, latest),
         veilSource.queryFilter('SecurityScanRecorded', fromBlock, latest),
+        veilSource.queryFilter('ZKReceiptRecorded', fromBlock, latest),
       ]);
 
       for (const ev of payments) {
@@ -283,6 +286,13 @@ async function main() {
         const provider = 'args' in ev && ev.args ? ev.args[0]?.toString() : undefined;
         pending.set(txHash, { action: 2, providerKey: provider });
         log('info', 'SecurityScanRecorded detected', { provider: provider ?? '?', tx: txHash });
+      }
+      for (const ev of zkReceipts) {
+        const txHash = ev.transactionHash;
+        if (processedTxs.has(txHash) || pending.has(txHash)) continue;
+        const orderId = 'args' in ev && ev.args ? ev.args[0]?.toString() : undefined;
+        pending.set(txHash, { action: 3, orderId });
+        log('info', 'ZKReceiptRecorded detected', { order: orderId ?? '?', tx: txHash });
       }
 
       fromBlock = latest + 1;
@@ -324,6 +334,18 @@ async function main() {
               await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash, settlement).catch((e: any) => log('error', 'Vault notify failed', { orderId, error: e?.message ?? e }));
             } else if (action === 2 && providerKey !== undefined) {
               await notifyVault(attachUrl, `security-${providerKey}`, hash, txHash).catch((e: any) => log('error', 'Vault notify failed', { provider: providerKey, error: e?.message ?? e }));
+            } else if (action === 3 && orderId !== undefined) {
+              await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash).catch((e: any) => log('error', 'Vault notify failed', { orderId, error: e?.message ?? e }));
+              // Auto-settle after ZK receipt is proven (if payment + fulfillment also proven)
+              if (!settledOrders.has(orderId)) {
+                const res = await trySettleOrder(config, ccProvider, orderId).catch(
+                  (e: any): SettlementResult => ({ ok: false, done: false, error: `settle exception: ${e?.message ?? e}` }),
+                );
+                if (res.ok) {
+                  log('info', 'Order settled after ZK receipt', { orderId, settle: res.settlementTxHash });
+                }
+                if (res.done) settledOrders.add(orderId);
+              }
             }
           } else {
             log('info', 'Proof pending', { action, tx: txHash, reason: proof.error });

@@ -23,6 +23,7 @@ contract SettlementEngine is OwnableLite, ReentrancyGuardLite {
     error EscrowNotLocked();
     error InvalidAttestation();
     error EscrowPartyMismatch();
+    error ZKProofNotVerified();
 
     event SettlementOperatorSet(address indexed operator);
     event AttestationReceiverSet(address indexed receiver);
@@ -73,6 +74,7 @@ contract SettlementEngine is OwnableLite, ReentrancyGuardLite {
         if (!mandates.isMandateValid(mandateId, serviceId, amount)) revert BudgetNotCompliant();
         if (!attestationReceiver.isPaymentVerified(orderId)) revert PaymentNotVerified();
         if (!attestationReceiver.isFulfillmentVerified(orderId)) revert FulfillmentNotVerified();
+        if (!attestationReceiver.isZKReceiptVerified(orderId)) revert ZKProofNotVerified();
         if (attestationReceiver.verifiedPaymentAmount(orderId) < amount) revert PaymentAmountMismatch();
         // The escrow's counterparties MUST equal the ASC-verified ones: the order
         // attributing this spend to a payer/provider comes from source-chain facts,

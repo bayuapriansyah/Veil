@@ -28,6 +28,9 @@ import { createServer as createHttpsServer } from 'node:https';
 import { readFileSync } from 'node:fs';
 import { AddressInfo } from 'node:net';
 import { keccak256, toUtf8Bytes } from 'ethers';
+import { generateZKReceipt, computeResultData, randomSalt } from '../security/zk-prover';
+import { recordZKReceipt } from '../attestation/record';
+import { sourceChainEnv } from '../attestation/record';
 
 import { VeilAdapter, SERVICE_MARKET_DATA, VeilPaymentDomain } from './adapter';
 import { SettlementLedger, EscrowStatus, Mandate, Escrow, OrderSupplement } from './ledger';
@@ -285,11 +288,35 @@ export class VeilProvider {
   }
 
   /** After a valid payment, the provider fulfills: records fulfillment + result hash. */
-  async fulfill(orderId: bigint, providerAddress: string, serviceId: string, payloadRef = keccak256(toUtf8Bytes('result'))): Promise<{ resultHash: string; fulfillmentVerified: boolean }> {
+  async fulfill(orderId: bigint, providerAddress: string, serviceId: string, payloadRef = keccak256(toUtf8Bytes('result'))): Promise<{ resultHash: string; fulfillmentVerified: boolean; zkProofHash?: string; zkTxHash?: string }> {
     const resultHash = this.adapter.computeResultHash({ orderId, serviceId, provider: providerAddress, payloadRef });
-    // Mirrors: FulfillmentReceipt event -> Attestcoin verification -> verified.
     this.ledger.markFulfillmentVerified(orderId);
-    return { resultHash, fulfillmentVerified: await this.ledger.isFulfillmentVerified(orderId) };
+
+    let zkProofHash: string | undefined;
+    let zkTxHash: string | undefined;
+    try {
+      const resultData = computeResultData(payloadRef);
+      const salt = randomSalt();
+      const zkResult = await generateZKReceipt(orderId, resultData, salt, providerAddress, serviceId);
+      if (zkResult.ok && zkResult.zkProofHash) {
+        zkProofHash = zkResult.zkProofHash;
+        const env = sourceChainEnv();
+        if (env.privateKey) {
+          const pk = process.env.SOURCE_CHAIN_PROVIDER_PRIVATE_KEY;
+          const zkRecord = await recordZKReceipt({
+            orderId,
+            provider: providerAddress,
+            zkProofHash,
+            serviceId,
+          }, pk);
+          if (zkRecord.ok && zkRecord.txHash) {
+            zkTxHash = zkRecord.txHash;
+          }
+        }
+      }
+    } catch { /* best-effort ZK recording */ }
+
+    return { resultHash, fulfillmentVerified: await this.ledger.isFulfillmentVerified(orderId), zkProofHash, zkTxHash };
   }
 
   // --- settlement / refund (mirrors SettlementEngine) --------------------- //

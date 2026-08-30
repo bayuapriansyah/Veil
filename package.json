@@ -21,7 +21,7 @@
     "test:audit": "tsx --test services/audit/audit.test.ts",
     "test:procurement": "tsx --test services/procurement/procurement.test.ts",
     "test:hardening": "tsx --test services/provider/hardening.test.ts",
-    "test": "tsx --test services/config/mode.test.ts services/provider/x402.test.ts services/demo/flow.test.ts services/procurement/procurement.test.ts services/audit/audit.test.ts services/provider/hardening.test.ts services/security/scanner.test.ts"
+    "test": "tsx --test services/config/mode.test.ts services/provider/x402.test.ts services/demo/flow.test.ts services/procurement/procurement.test.ts services/audit/audit.test.ts services/provider/hardening.test.ts services/security/scanner.test.ts services/security/zk-prover.test.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",
@@ -29,9 +29,11 @@
     "@gluwa/usc-sdk": "0.18.0",
     "@openzeppelin/contracts": "^5.4.0",
     "@supabase/supabase-js": "^2.112.4",
+    "circomlibjs": "^0.1.7",
     "dotenv": "^17.4.2",
     "ethers": "^6.17.0",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "snarkjs": "^0.7.6"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

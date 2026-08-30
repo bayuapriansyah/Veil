@@ -14,10 +14,12 @@ import {IMandateManager} from "../src/interfaces/IMandateManager.sol";
 contract MockAttestationReceiver is IAttestationReceiver {
     mapping(uint256 => bool) public payments;
     mapping(uint256 => bool) public fulfillments;
+    mapping(uint256 => bool) public zkReceipts;
     mapping(uint256 => uint256) public amounts;
     mapping(uint256 => bytes32) public services;
     mapping(uint256 => address) public agents;
     mapping(uint256 => address) public providers;
+    mapping(uint256 => bytes32) public zkProofHashes;
 
     function setPayment(uint256 orderId, uint256 amount, bytes32 serviceId) external {
         payments[orderId] = true;
@@ -32,6 +34,11 @@ contract MockAttestationReceiver is IAttestationReceiver {
 
     function setFulfillment(uint256 orderId) external {
         fulfillments[orderId] = true;
+    }
+
+    function setZKReceipt(uint256 orderId) external {
+        zkReceipts[orderId] = true;
+        zkProofHashes[orderId] = keccak256(abi.encodePacked(orderId, "zkproof"));
     }
 
     function isPaymentVerified(uint256 orderId) external view returns (bool) {
@@ -56,6 +63,14 @@ contract MockAttestationReceiver is IAttestationReceiver {
 
     function verifiedProviderOf(uint256 orderId) external view returns (address) {
         return providers[orderId];
+    }
+
+    function isZKReceiptVerified(uint256 orderId) external view returns (bool) {
+        return zkReceipts[orderId];
+    }
+
+    function verifiedZKProofHashOf(uint256 orderId) external view returns (bytes32) {
+        return zkProofHashes[orderId];
     }
 }
 
@@ -132,6 +147,7 @@ contract VeilFoundationTest is Test {
         _createEscrow(orderId, mandateId, 2 ether);
         attestations.setPayment(orderId, 2 ether, SERVICE);
         attestations.setFulfillment(orderId);
+        attestations.setZKReceipt(orderId);
         uint256 providerBefore = provider.balance;
         vm.prank(operator);
         settlement.settle(orderId);
@@ -145,6 +161,18 @@ contract VeilFoundationTest is Test {
         uint256 orderId = 102;
         _createEscrow(orderId, mandateId, 2 ether);
         attestations.setPayment(orderId, 2 ether, SERVICE);
+        vm.prank(operator);
+        vm.expectRevert();
+        settlement.settle(orderId);
+        assertEq(uint256(escrows.escrowStatus(orderId)), uint256(IEscrowManager.EscrowStatus.Locked));
+    }
+
+    function test_RevertWhen_ZKProofMissing() public {
+        uint256 mandateId = _createMandate(10 ether, uint64(block.timestamp + 1 days));
+        uint256 orderId = 200;
+        _createEscrow(orderId, mandateId, 2 ether);
+        attestations.setPayment(orderId, 2 ether, SERVICE);
+        attestations.setFulfillment(orderId);
         vm.prank(operator);
         vm.expectRevert();
         settlement.settle(orderId);
@@ -175,6 +203,7 @@ contract VeilFoundationTest is Test {
         _createEscrow(orderId, mandateId, 2 ether);
         attestations.setPayment(orderId, 2 ether, SERVICE);
         attestations.setFulfillment(orderId);
+        attestations.setZKReceipt(orderId);
         vm.prank(stranger);
         vm.expectRevert();
         settlement.settle(orderId);
@@ -186,6 +215,7 @@ contract VeilFoundationTest is Test {
         _createEscrow(orderId, mandateId, 2 ether);
         attestations.setPayment(orderId, 2 ether, OTHER_SERVICE);
         attestations.setFulfillment(orderId);
+        attestations.setZKReceipt(orderId);
         vm.prank(operator);
         vm.expectRevert();
         settlement.settle(orderId);
@@ -199,6 +229,7 @@ contract VeilFoundationTest is Test {
         mandates.revokeMandate(mandateId);
         attestations.setPayment(orderId, 2 ether, SERVICE);
         attestations.setFulfillment(orderId);
+        attestations.setZKReceipt(orderId);
         vm.prank(operator);
         vm.expectRevert();
         settlement.settle(orderId);

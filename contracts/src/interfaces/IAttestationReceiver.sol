@@ -8,4 +8,6 @@ interface IAttestationReceiver {
     function verifiedServiceIdOf(uint256 orderId) external view returns (bytes32);
     function verifiedAgentOf(uint256 orderId) external view returns (address);
     function verifiedProviderOf(uint256 orderId) external view returns (address);
+    function isZKReceiptVerified(uint256 orderId) external view returns (bool);
+    function verifiedZKProofHashOf(uint256 orderId) external view returns (bytes32);
 }

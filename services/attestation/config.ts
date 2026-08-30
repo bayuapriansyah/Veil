@@ -19,6 +19,7 @@ export interface VeilConfig {
   creditcoinRpcUrl: string;
   attestationReceiverAddress: string;
   settlementEngineAddress?: string;
+  zkVerifierAddress?: string;
   walletPrivateKey: string;
   proofBuilderUrl: string;
 }
@@ -46,6 +47,7 @@ export function loadConfig(): VeilConfig {
     creditcoinRpcUrl: process.env.CREDITCOIN_RPC_URL ?? 'https://rpc.cc3-testnet.creditcoin.network',
     attestationReceiverAddress: process.env.USC_ATTESTATION_RECEIVER_ADDRESS!,
     settlementEngineAddress: process.env.SETTLEMENT_ENGINE_ADDRESS,
+    zkVerifierAddress: process.env.ZK_VERIFIER_ADDRESS,
     walletPrivateKey: process.env.CREDITCOIN_WALLET_PRIVATE_KEY!,
     proofBuilderUrl:
       process.env.PROOF_BUILDER_URL ?? 'https://prover.cc3-testnet.creditcoin.network',

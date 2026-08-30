@@ -37,11 +37,15 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     // SecurityScanRecorded(address indexed provider, bytes32 indexed bytecodeHash, uint8 riskScore, bool passedThreshold, address scanner)
     bytes32 public constant SECURITY_SCAN_EVENT_SIGNATURE =
         keccak256("SecurityScanRecorded(address,bytes32,uint8,bool,address)");
+    // ZKReceiptRecorded(uint256 indexed orderId, address indexed provider, bytes32 indexed zkProofHash, bytes32 serviceId, uint256 timestamp)
+    bytes32 public constant ZK_RECEIPT_EVENT_SIGNATURE =
+        keccak256("ZKReceiptRecorded(uint256,address,bytes32,bytes32,uint256)");
 
     enum Actions {
         Payment, // 0
         Fulfillment, // 1
-        SecurityScan // 2
+        SecurityScan, // 2
+        ZKReceipt // 3
     }
 
     // ------------------------------------------------------------------ //
@@ -58,6 +62,9 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     mapping(uint256 => uint8) public verifiedRiskScore;
     mapping(uint256 => bool) public verifiedPassedThreshold;
 
+    mapping(uint256 => bool) public zkReceiptsVerified;
+    mapping(uint256 => bytes32) public verifiedZKProofHash;
+
     /// The single source-chain contract allowed to emit the events we act on.
     /// Only events emitted by this address are accepted (see EvmV1Decoder usage).
     address public veilSource;
@@ -73,6 +80,7 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     event PaymentVerified(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 queryId);
     event FulfillmentVerified(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 queryId);
     event SecurityScanVerified(uint256 indexed providerKey, uint8 riskScore, bool passedThreshold, bytes32 queryId);
+    event ZKReceiptVerified(uint256 indexed orderId, address indexed provider, bytes32 zkProofHash, bytes32 queryId);
     event QueryProcessed(bytes32 indexed queryId, uint8 indexed action);
 
     constructor() Ownable(msg.sender) {
@@ -180,6 +188,8 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
             _processFulfillment(queryId, encodedTransaction);
         } else if (action == uint8(Actions.SecurityScan)) {
             _processSecurityScan(queryId, encodedTransaction);
+        } else if (action == uint8(Actions.ZKReceipt)) {
+            _processZKReceipt(queryId, encodedTransaction);
         } else {
             revert InvalidAction(action);
         }
@@ -248,6 +258,26 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
         emit SecurityScanVerified(providerKey, riskScore, passedThreshold, queryId);
     }
 
+    function _processZKReceipt(bytes32 queryId, bytes memory encodedTransaction) internal {
+        EvmV1Decoder.LogEntry[] memory logs = _validateTransactionContents(
+            encodedTransaction, ZK_RECEIPT_EVENT_SIGNATURE
+        );
+
+        EvmV1Decoder.LogEntry memory log = logs[0];
+        if (log.topics.length != 4) revert();
+
+        uint256 orderId = uint256(log.topics[1]);
+        address provider = address(uint160(uint256(log.topics[2])));
+        bytes32 zkProofHash = bytes32(log.topics[3]);
+
+        (bytes32 serviceId, ) = abi.decode(log.data, (bytes32, uint256));
+
+        zkReceiptsVerified[orderId] = true;
+        verifiedZKProofHash[orderId] = zkProofHash;
+
+        emit ZKReceiptVerified(orderId, provider, zkProofHash, queryId);
+    }
+
     /// @dev Validates a decoded transaction and returns matching event logs.
     ///      Throws unless: tx type is supported, receipt succeeded (status==1),
     ///      the event exists, and it was emitted by the registered VeilSource.
@@ -306,5 +336,13 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
 
     function verifiedPassedThresholdOf(address provider) external view returns (bool) {
         return verifiedPassedThreshold[uint256(uint160(provider))];
+    }
+
+    function isZKReceiptVerified(uint256 orderId) external view returns (bool) {
+        return zkReceiptsVerified[orderId];
+    }
+
+    function verifiedZKProofHashOf(uint256 orderId) external view returns (bytes32) {
+        return verifiedZKProofHash[orderId];
     }
 }
