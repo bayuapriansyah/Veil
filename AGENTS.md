@@ -73,18 +73,19 @@ Frontend (Next.js 14 app router):
 ### Sepolia (Chain ID 11155111)
 | Contract | Address |
 |----------|---------|
-| VeilSource | `0xbe2d0793344e656690be44b81128BbF0EDa6F93c` |
+| VeilSource | `0xe81F6d1A1aE506e03ca0e960954C319a32Bb771a` |
 
 ### Creditcoin CC3 (Chain ID 102031)
 | Contract | Address |
 |----------|---------|
-| AttestationReceiver | `0x071ff3210EA7619B7065ea24058030464093Dccd` |
-| MandateManager | `0xcbB21dd8F1313a5A1Fb087463E58AE19E9f24b67` |
-| EscrowManager | `0x42e7F984A45C542B2cE48171f89f8341C51016Bf` |
-| ReputationEngine | `0x3D5DdE73217Cd255ecB3CD9bd0CD151341d76DBf` |
-| SettlementEngine | `0x197F60C3cAc1E411069a856BeD8f3D7Fffc48dd7` |
+| AttestationReceiver | `0x1eD3F77826664057e55665B04A089437B371e4FA` |
+| MandateManager | `0xD2CaB58eBD729580f00E6a8260dA2d410de6560E` |
+| EscrowManager | `0x9b6CC7C2Bcea8Ef9CAb92D818f8071c045762B37` |
+| ReputationEngine | `0x1b5056CB0dC71f6f36749548CDc3E1D2cc468587` |
+| SettlementEngine | `0xc593195E02094380a0c426179b70d32CE8A3f826` |
+| ZKReceiptVerifier | `0x1D35b6381A55970fbE7Afe11EB96350147Bc6031` |
 | VeilRegistry | `0x6d9DCfAFC1Ee54Dcc1922d3d6BfC4C03402500eE` |
-| EvmV1Decoder | `0x4eF11C369D9CAd4Fe68894a8B1D71Bc177c80b26` |
+| EvmV1Decoder | `0x912F3e988d0D8c4b6BD4671bE5D74664A4D24a65` |
 
 ---
 
@@ -110,13 +111,14 @@ Root `.env` + `frontend/.env` — both must be set for production mode.
 VEIL_MODE=production                          # auto-detected if keys present
 SOURCE_CHAIN_WALLET_PRIVATE_KEY=0x9103...    # Agent B key (recordAgentPayment)
 SOURCE_CHAIN_PROVIDER_PRIVATE_KEY=0xd504...  # Provider key (x402 signing)
-SOURCE_CHAIN_CONTRACT_ADDRESS=0xbe2d...93c   # VeilSource on Sepolia
+SOURCE_CHAIN_CONTRACT_ADDRESS=0xe81F...771a  # VeilSource on Sepolia
 CREDITCOIN_RPC_URL=https://rpc.cc3-testnet.creditcoin.network
-USC_ATTESTATION_RECEIVER_ADDRESS=0x071f...Dccd
-SETTLEMENT_ENGINE_ADDRESS=0x197F...8dd7
-ESCROW_MANAGER_ADDRESS=0x42e7...16Bf
-MANDATE_MANAGER_ADDRESS=0xcbB2...4b67
-REPUTATION_ENGINE_ADDRESS=0x3D5D...6DBf
+USC_ATTESTATION_RECEIVER_ADDRESS=0x1eD3...e4FA
+SETTLEMENT_ENGINE_ADDRESS=0xc593...f826
+ESCROW_MANAGER_ADDRESS=0x9b6C...2B37
+MANDATE_MANAGER_ADDRESS=0xD2Ca...560E
+REPUTATION_ENGINE_ADDRESS=0x1b50...8587
+ZK_VERIFIER_ADDRESS=0x1D35...6031           # ZKReceiptVerifier (Groth16)
 CREDITCOIN_WALLET_PRIVATE_KEY=0x836b...fe9  # Deployer key (worker CC3 txs)
 NEXT_PUBLIC_CC3_RPC_URL=https://rpc.cc3-testnet.creditcoin.network
 NEXT_PUBLIC_VEIL_REGISTRY_ADDRESS=0x6d9D...0eE
