@@ -36,6 +36,10 @@ export interface PublicTxView {
   escrowTx?: string;
   /** MandateManager mandate id backing the settlement. */
   mandateId?: string;
+  /** Poseidon(2) commitment hash linking the ZK proof to the order. */
+  zkProofHash?: string;
+  /** ZK receipt verification status on Creditcoin. */
+  zkReceiptStatus?: 'none' | 'proving' | 'verified';
 }
 
 /** Evidence collected across the VEIL stack (kept encrypted at rest). */
@@ -104,6 +108,8 @@ export interface TransactionInput {
   attestationStatus?: 'mirror' | 'proving' | 'verified' | 'a2a-delegation';
   /** Creditcoin proof-submit tx once verified (public chain data). */
   attestationTx?: string;
+  zkProofHash?: string;
+  zkReceiptStatus?: 'none' | 'proving' | 'verified';
 }
 
 /** A sealed, stored transaction record. Sensitive payload is ciphertext. */
@@ -121,6 +127,8 @@ export interface TransactionRecord {
   settlementTx?: string;
   escrowTx?: string;
   mandateId?: string;
+  zkProofHash?: string;
+  zkReceiptStatus?: 'none' | 'proving' | 'verified';
 }
 
 /** AES-256-GCM sealed box (base64), `tag` is the authentication tag. */

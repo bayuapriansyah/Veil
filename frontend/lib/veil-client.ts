@@ -72,6 +72,8 @@ export interface AuditTx {
   settlementTx?: string;
   escrowTx?: string;
   mandateId?: string;
+  zkProofHash?: string;
+  zkReceiptStatus?: 'none' | 'proving' | 'verified';
 }
 
 export interface VeilState {

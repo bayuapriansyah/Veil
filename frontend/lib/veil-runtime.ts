@@ -52,6 +52,10 @@ export interface RuntimeOrder {
   onchainRecordTxHash?: string | null;
   /** Live source-chain FulfillmentReceipt tx hash (provider-signed), when recorded. */
   fulfillmentTxHash?: string | null;
+  /** Poseidon(2) ZK proof hash linking the order to its ZK receipt. */
+  zkProofHash?: string;
+  /** Live source-chain ZKReceiptRecorded tx hash, when recorded. */
+  zkTxHash?: string | null;
   stages: TimelineStage[];
 }
 
@@ -251,6 +255,8 @@ class VeilRuntime {
       escrowStatus: escrowStatus === 2 ? 'Released' : escrowStatus === 1 ? 'Locked' : escrowStatus === 3 ? 'Refunded' : 'None',
       onchainRecordTxHash: onchainTxHashOf(outcome) ?? null,
       fulfillmentTxHash: fulfillmentTx.ok && 'txHash' in fulfillmentTx ? fulfillmentTx.txHash : null,
+      zkProofHash,
+      zkTxHash,
       stages: successStages(settle.ok ? 'SETTLED' : 'PENDING'),
     };
     this.orders.unshift(order);
@@ -376,6 +382,8 @@ class VeilRuntime {
       settlementStatus: order.escrowStatus.toLowerCase(),
       sourceTx: onchain ?? undefined,
       attestationStatus: onchain ? 'proving' : 'mirror',
+      zkProofHash: order.zkProofHash,
+      zkReceiptStatus: order.zkTxHash ? 'proving' : order.zkProofHash ? 'none' : undefined,
       protectedData: {
         agent: this.shop.agentAddress,
         provider: order.provider,
@@ -396,7 +404,7 @@ class VeilRuntime {
   }
 
   /** Record the live attestation fact once the worker proves it on Creditcoin. */
-  async attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): Promise<{ ok: boolean; error?: string }> {
+  async attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string; zkReceiptStatus?: 'none' | 'proving' | 'verified' }): Promise<{ ok: boolean; error?: string }> {
     await this.start();
     return this.vault.attachAttestation(txId, opts);
   }

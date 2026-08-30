@@ -22,6 +22,8 @@ type VaultTransactionRow = {
   settlement_tx: string | null;
   escrow_tx: string | null;
   mandate_id: string | null;
+  zk_proof_hash: string | null;
+  zk_receipt_status: 'none' | 'proving' | 'verified' | null;
 };
 
 type AuditorRow = {
@@ -67,16 +69,19 @@ export class SupabaseVault implements VaultBackend {
       sourceTx: input.sourceTx,
       attestationStatus: input.attestationStatus ?? 'mirror',
       attestationTx: input.attestationTx,
+      zkProofHash: input.zkProofHash,
+      zkReceiptStatus: input.zkReceiptStatus,
     };
     const { error } = await this.supabase.from('vault_transactions').upsert(recordToRow(record));
     if (error) throw new Error(error.message);
     return { record, view: publicView(record) };
   }
 
-  async attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): Promise<{ ok: boolean; error?: string }> {
+  async attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string; zkReceiptStatus?: 'none' | 'proving' | 'verified' }): Promise<{ ok: boolean; error?: string }> {
     const patch: Record<string, unknown> = { attestation_status: opts.attestationStatus, updated_at: Math.floor(Date.now() / 1000) };
     if (opts.attestationTx) patch.attestation_tx = opts.attestationTx;
     if (opts.sourceTx) patch.source_tx = opts.sourceTx;
+    if (opts.zkReceiptStatus) patch.zk_receipt_status = opts.zkReceiptStatus;
     return this.updateKnown(txId, patch);
   }
 
@@ -189,7 +194,7 @@ export class SupabaseVault implements VaultBackend {
 }
 
 function recordToRow(rec: TransactionRecord) {
-  return {
+  const row: Record<string, unknown> = {
     tx_id: rec.txId,
     commitment: rec.commitment,
     verification_status: rec.verificationStatus,
@@ -207,6 +212,9 @@ function recordToRow(rec: TransactionRecord) {
     mandate_id: rec.mandateId ?? null,
     updated_at: Math.floor(Date.now() / 1000),
   };
+  if (rec.zkProofHash) row.zk_proof_hash = rec.zkProofHash;
+  if (rec.zkReceiptStatus) row.zk_receipt_status = rec.zkReceiptStatus;
+  return row;
 }
 
 function rowToRecord(row: VaultTransactionRow): TransactionRecord {
@@ -225,6 +233,8 @@ function rowToRecord(row: VaultTransactionRow): TransactionRecord {
     settlementTx: row.settlement_tx ?? undefined,
     escrowTx: row.escrow_tx ?? undefined,
     mandateId: row.mandate_id ?? undefined,
+    zkProofHash: (row as Record<string, unknown>).zk_proof_hash as string ?? undefined,
+    zkReceiptStatus: (row as Record<string, unknown>).zk_receipt_status as 'none' | 'proving' | 'verified' ?? undefined,
   };
 }
 

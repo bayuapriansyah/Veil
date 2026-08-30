@@ -56,17 +56,20 @@ export class AuditVault implements VaultBackend {
       sourceTx: input.sourceTx,
       attestationStatus: input.attestationStatus ?? 'mirror',
       attestationTx: input.attestationTx,
+      zkProofHash: input.zkProofHash,
+      zkReceiptStatus: input.zkReceiptStatus,
     };
     this.transactions.set(txId, record);
     return { record, view: publicView(record) };
   }
 
-  async attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): Promise<{ ok: boolean; error?: string }> {
+  async attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string; zkReceiptStatus?: 'none' | 'proving' | 'verified' }): Promise<{ ok: boolean; error?: string }> {
     const rec = this.transactions.get(txId);
     if (!rec) return { ok: false, error: 'TransactionNotKnown' };
     rec.attestationStatus = opts.attestationStatus;
     if (opts.attestationTx) rec.attestationTx = opts.attestationTx;
     if (opts.sourceTx) rec.sourceTx = opts.sourceTx;
+    if (opts.zkReceiptStatus) rec.zkReceiptStatus = opts.zkReceiptStatus;
     return { ok: true };
   }
 
@@ -193,6 +196,8 @@ export function publicView(rec: TransactionRecord): PublicTxView {
     settlementTx: rec.settlementTx,
     escrowTx: rec.escrowTx,
     mandateId: rec.mandateId,
+    zkProofHash: rec.zkProofHash,
+    zkReceiptStatus: rec.zkReceiptStatus,
   };
 }
 

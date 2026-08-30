@@ -2,7 +2,7 @@ import { AuditorAccount, DisclosureOptions, EvidenceBundle, ProtectedData, Publi
 
 export interface VaultBackend {
   recordTransaction(input: TransactionInput): Promise<{ record: TransactionRecord; view: PublicTxView }>;
-  attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): Promise<{ ok: boolean; error?: string }>;
+  attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string; zkReceiptStatus?: 'none' | 'proving' | 'verified' }): Promise<{ ok: boolean; error?: string }>;
   attachSettlement(txId: string, opts: { settlementStatus?: string; settlementTx?: string; escrowTx?: string; mandateId?: string }): Promise<{ ok: boolean; error?: string }>;
   get(txId: string): Promise<TransactionRecord | undefined>;
   list(): Promise<PublicTxView[]>;

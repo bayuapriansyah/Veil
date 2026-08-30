@@ -13,13 +13,14 @@ export async function POST(req: Request): Promise<NextResponse> {
       attestationStatus?: 'proving' | 'verified';
       attestationTx?: string;
       sourceTx?: string;
+      zkReceiptStatus?: 'none' | 'proving' | 'verified';
       settlement?: { status?: string; txHash?: string; escrowTxHash?: string; mandateId?: string };
     };
     if (!body.txId || (body.attestationStatus !== 'proving' && body.attestationStatus !== 'verified')) {
       return NextResponse.json({ ok: false, error: 'txId and attestationStatus are required' }, { status: 400 });
     }
     const rt = await getRuntime();
-    const res = await rt.attachAttestation(body.txId, { attestationStatus: body.attestationStatus, attestationTx: body.attestationTx, sourceTx: body.sourceTx });
+    const res = await rt.attachAttestation(body.txId, { attestationStatus: body.attestationStatus, attestationTx: body.attestationTx, sourceTx: body.sourceTx, zkReceiptStatus: body.zkReceiptStatus });
     if (!res.ok) {
       return NextResponse.json({ ok: false, error: res.error }, { status: 404 });
     }

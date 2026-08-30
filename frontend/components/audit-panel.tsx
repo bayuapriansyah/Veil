@@ -139,6 +139,7 @@ export function AuditConsole(): React.ReactElement {
                   <th className="pb-3 pr-5">Verification</th>
                   <th className="pb-3 pr-5">Policy</th>
                   <th className="pb-3 pr-5">Settlement</th>
+                  <th className="pb-3 pr-5">ZK Proof</th>
                   <th className="pb-3 pr-5">Attestation</th>
                   <th className="pb-3">When</th>
                 </tr>
@@ -171,6 +172,22 @@ export function AuditConsole(): React.ReactElement {
                           >
                             settle {txShort(t.settlementTx)}
                           </a>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 pr-5">
+                      <div className="flex flex-col gap-1">
+                        {t.zkProofHash ? (
+                          <>
+                            <span className={`font-mono text-[13px] ${t.zkReceiptStatus === 'verified' ? 'text-ok' : t.zkReceiptStatus === 'proving' ? 'text-amber-400' : 'text-mut'}`}>
+                              {t.zkReceiptStatus === 'verified' ? 'ZK VERIFIED' : t.zkReceiptStatus === 'proving' ? 'ZK PROVING' : 'ZK PENDING'}
+                            </span>
+                            <span className="font-mono text-[10px] text-mut/60" title={t.zkProofHash}>
+                              {t.zkProofHash.slice(0, 10)}...
+                            </span>
+                          </>
+                        ) : (
+                          <span className="font-mono text-[13px] text-mut/40">—</span>
                         )}
                       </div>
                     </td>

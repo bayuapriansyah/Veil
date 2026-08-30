@@ -126,6 +126,7 @@ async function notifyVault(
   attestationTx: string,
   sourceTx?: string,
   settlement?: SettlementResult,
+  zkReceiptStatus?: 'none' | 'proving' | 'verified',
 ): Promise<void> {
   const res = await fetch(attachUrl, {
     method: 'POST',
@@ -135,6 +136,7 @@ async function notifyVault(
       attestationStatus: 'verified',
       attestationTx,
       sourceTx,
+      zkReceiptStatus,
       settlement: settlement?.ok
         ? { status: 'settled', txHash: settlement.settlementTxHash, escrowTxHash: settlement.escrowTxHash, mandateId: settlement.mandateId }
         : undefined,
@@ -335,7 +337,7 @@ async function main() {
             } else if (action === 2 && providerKey !== undefined) {
               await notifyVault(attachUrl, `security-${providerKey}`, hash, txHash).catch((e: any) => log('error', 'Vault notify failed', { provider: providerKey, error: e?.message ?? e }));
             } else if (action === 3 && orderId !== undefined) {
-              await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash).catch((e: any) => log('error', 'Vault notify failed', { orderId, error: e?.message ?? e }));
+              await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash, undefined, 'verified').catch((e: any) => log('error', 'Vault notify failed', { orderId, error: e?.message ?? e }));
               // Auto-settle after ZK receipt is proven (if payment + fulfillment also proven)
               if (!settledOrders.has(orderId)) {
                 const res = await trySettleOrder(config, ccProvider, orderId).catch(
