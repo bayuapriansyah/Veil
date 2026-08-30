@@ -138,3 +138,13 @@ export interface ToolCallRecord {
   data?: unknown;
   error?: string;
 }
+
+export interface ToolProgress {
+  step: number;
+  total: number;
+  tool: string;
+  rationale: string;
+  status: 'pending' | 'running' | 'done' | 'failed';
+  summary?: string;
+  error?: string;
+}

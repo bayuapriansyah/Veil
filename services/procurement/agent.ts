@@ -14,7 +14,7 @@
  *   - `openai` is imported dynamically (never at module load).
  */
 import { ProcurementShop } from './shop';
-import { TOOL_NAMES, ProcurementOutcome, ProcurementPlan, PlanStep, ToolCallRecord, ToolName } from './types';
+import { TOOL_NAMES, ProcurementOutcome, ProcurementPlan, PlanStep, ToolCallRecord, ToolName, ToolProgress } from './types';
 import { AgentTool, assertSafeToolName, createAgentTools, ProcurementPolicyError, ToolResult } from './tools';
 import { buildProcurementPlan, parsePurchaseIntent } from './plan';
 import { SERVICE_MARKET_DATA } from '../provider/adapter';
@@ -117,7 +117,7 @@ export class ProcurementAgent {
   }
 
   /** One full purchase run. */
-  async run(task: string): Promise<ProcurementOutcome> {
+  async run(task: string, onProgress?: (p: ToolProgress) => void): Promise<ProcurementOutcome> {
     let planner: 'llm' | 'deterministic' = 'deterministic';
     let plan: ProcurementPlan;
     try {
@@ -134,11 +134,11 @@ export class ProcurementAgent {
         error: e instanceof Error ? e.message : String(e),
       };
     }
-    return this.execute(plan, planner);
+    return this.execute(plan, planner, onProgress);
   }
 
   /** Execute a plan step-by-step, aborting on the first refusal/gate failure. */
-  private async execute(plan: ProcurementPlan, planner: 'llm' | 'deterministic'): Promise<ProcurementOutcome> {
+  private async execute(plan: ProcurementPlan, planner: 'llm' | 'deterministic', onProgress?: (p: ToolProgress) => void): Promise<ProcurementOutcome> {
     const results: Record<string, ToolCallRecord> = {};
     let lastOfferOrderId: bigint | undefined;
     let orderId: bigint | undefined;
@@ -163,6 +163,13 @@ export class ProcurementAgent {
       fulfillmentVerified,
     });
 
+    const total = plan.steps.length;
+    if (onProgress) {
+      for (const s of plan.steps) {
+        onProgress({ step: s.index, total, tool: s.tool, rationale: s.rationale, status: 'pending' });
+      }
+    }
+
     for (const s of plan.steps) {
       let args = s.args;
       if (s.tool === 'makePayment' && args.orderId === undefined) {
@@ -170,13 +177,21 @@ export class ProcurementAgent {
         args = { ...args, orderId: lastOfferOrderId.toString() };
       }
 
+      onProgress?.({ step: s.index, total, tool: s.tool, rationale: s.rationale, status: 'running' });
+
       let rec: ToolCallRecord;
       try {
         const r = await this.runTool(s.tool, args);
         rec = { args, ok: r.ok, data: r.data, error: r.error };
         results[s.index] = rec;
 
-        if (!r.ok) return fail(`step ${s.index} ${s.tool}: ${r.error ?? 'failed'}`);
+        if (!r.ok) {
+          onProgress?.({ step: s.index, total, tool: s.tool, rationale: s.rationale, status: 'failed', error: r.error ?? 'failed' });
+          return fail(`step ${s.index} ${s.tool}: ${r.error ?? 'failed'}`);
+        }
+
+        const summary = this.summarizeStep(s.tool, r.data);
+        onProgress?.({ step: s.index, total, tool: s.tool, rationale: s.rationale, status: 'done', summary });
 
         const d = r.data as { [k: string]: unknown } | undefined;
         // Deterministic gates applied to observations (the ledger decides).
@@ -232,6 +247,39 @@ export class ProcurementAgent {
       paymentVerified,
       fulfillmentVerified,
     };
+  }
+
+  private summarizeStep(tool: string, data: unknown): string | undefined {
+    if (!data || typeof data !== 'object') return undefined;
+    const d = data as Record<string, unknown>;
+    switch (tool) {
+      case 'searchProviders': {
+        const p = d.providers as { name?: string; reputation?: number }[] | undefined;
+        return p ? `${p.length} eligible provider${p.length > 1 ? 's' : ''} found` : undefined;
+      }
+      case 'getProviderDetails':
+        return d.name ? `${d.name} (rep ${d.reputation ?? '?'})` : undefined;
+      case 'checkProviderSecurity':
+        return `risk ${d.riskScore ?? '?'}/100${d.passedThreshold ? ' — passed' : ' — FAILED'}`;
+      case 'checkReputation':
+        return `score ${d.score ?? '?'}/5`;
+      case 'checkMandate': {
+        const m = d.mandates as { mandateId?: string; remaining?: string }[] | undefined;
+        return m?.[0] ? `mandate #${m[0].mandateId}, ${m[0].remaining} atoms left` : undefined;
+      }
+      case 'checkBudget':
+        return d.affordable ? `budget OK (${d.remainingAtoms} atoms remaining)` : 'insufficient budget';
+      case 'requestService':
+        return d.offer ? `offer reserved` : undefined;
+      case 'makePayment': {
+        const parts: string[] = [];
+        if (d.paymentVerified) parts.push('paid');
+        if (d.fulfillmentVerified) parts.push('fulfilled');
+        return parts.length ? parts.join(' + ') : 'payment sent';
+      }
+      default:
+        return undefined;
+    }
   }
 
   /**

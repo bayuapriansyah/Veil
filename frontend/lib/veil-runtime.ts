@@ -20,6 +20,7 @@ import { Wallet, keccak256, toUtf8Bytes } from 'ethers';
 import { SERVICE_COMPUTE, SERVICE_MARKET_DATA } from '../../services/provider/adapter';
 import { createProcurementShop, OPERATOR, PROVIDER } from '../../services/procurement/shop';
 import { ProcurementAgent } from '../../services/procurement/agent';
+import { ToolProgress } from '../../services/procurement/types';
 import { isDemoMode, resolveVeilMode, type VeilMode } from '../../services/config/mode';
 import { recordAgentPayment, recordFulfillment, recordZKReceipt } from '../../services/attestation/record';
 import { generateZKReceipt, computeResultData, randomSalt } from '../../services/security/zk-prover';
@@ -186,10 +187,10 @@ class VeilRuntime {
     return SERVICE_LABELS[serviceId] ?? SERVICE_LABELS[SERVICE_MARKET_DATA];
   }
 
-  async purchase(task: string): Promise<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null }> {
+  async purchase(task: string, onProgress?: (p: ToolProgress) => void): Promise<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string; zkTxHash?: string | null }> {
     await this.start();
     if (this.killSwitch) return { ok: false, reason: 'kill switch engaged — mandate revoked, purchases refused' };
-    const outcome = await this.agent.run(task);
+    const outcome = await this.agent.run(task, onProgress);
     if (!outcome.ok || !outcome.orderId) {
       this.recordsFailed(orderFromOutcome(outcome, task));
       return { ok: false, reason: outcome.error ?? 'purchase refused' };

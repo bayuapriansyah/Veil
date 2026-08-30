@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import { Warning } from '@phosphor-icons/react';
 import { api, VeilState, atomsUsd, useVeilMode, shortAddress } from '../lib/veil-client';
 import { Card, StatusChip } from './ui';
+import { ToolProgressPanel } from './tool-progress';
+import type { ToolProgress } from '../../services/procurement/types';
 
 const ATTESTATION_WINDOW_MS = 6 * 60 * 1000;
 
-function PurchasePipeline({ order, createdAt }: { order: { ok: boolean; orderId?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string }; createdAt: number }): React.ReactElement {
+function PurchasePipeline({ order, createdAt }: { order: { ok: boolean; orderId?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string; zkTxHash?: string | null }; createdAt: number }): React.ReactElement {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -21,9 +23,9 @@ function PurchasePipeline({ order, createdAt }: { order: { ok: boolean; orderId?
 
   const steps = [
     { label: 'Authorization', done: true },
-    { label: 'Payment', done: !!order.onchainRecordTxHash },
-    { label: 'Fulfillment', done: !!order.fulfillmentTxHash },
-    { label: 'ZK Receipt', done: !!order.zkProofHash },
+    { label: 'Payment', done: !!order.onchainRecordTxHash, href: order.onchainRecordTxHash ? `https://sepolia.etherscan.io/tx/${order.onchainRecordTxHash}` : undefined },
+    { label: 'Fulfillment', done: !!order.fulfillmentTxHash, href: order.fulfillmentTxHash ? `https://sepolia.etherscan.io/tx/${order.fulfillmentTxHash}` : undefined },
+    { label: 'ZK Receipt', done: !!order.zkProofHash, href: order.zkTxHash ? `https://sepolia.etherscan.io/tx/${order.zkTxHash}` : undefined },
     { label: 'Attestation', done: allDone, pending: !allDone },
     { label: 'Settlement', done: false },
   ];
@@ -54,7 +56,14 @@ function PurchasePipeline({ order, createdAt }: { order: { ok: boolean; orderId?
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
         {steps.map((s) => (
           <span key={s.label} className={`font-mono ${s.done ? 'text-ok' : s.pending ? 'text-attest' : 'text-mut/50'}`}>
-            {s.done ? '✓' : s.pending ? '◦' : '·'} {s.label}
+            {s.done ? '✓' : s.pending ? '◦' : '·'}{' '}
+            {s.href ? (
+              <a href={s.href} target="_blank" rel="noopener noreferrer" className="underline decoration-current/30 hover:decoration-current/70">
+                {s.label}
+              </a>
+            ) : (
+              s.label
+            )}
           </span>
         ))}
       </div>
@@ -85,26 +94,63 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
   const [tab, setTab] = useState<'direct' | 'delegate'>('direct');
   const [task, setTask] = useState(DIRECT_SUGGESTED[0]);
   const [busy, setBusy] = useState(false);
-  const [last, setLast] = useState<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string } | null>(null);
+  const [last, setLast] = useState<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string; zkTxHash?: string | null } | null>(null);
   const [lastCreatedAt, setLastCreatedAt] = useState(0);
+  const [toolSteps, setToolSteps] = useState<ToolProgress[]>([]);
   const [lastDelegate, setLastDelegate] = useState<DelegateResult | null>(null);
   const mode = useVeilMode();
 
   const run = async (): Promise<void> => {
     setBusy(true);
+    setToolSteps([]);
     try {
-      const body = await api<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string }>('/api/veil/purchase', {
+      const res = await fetch('/api/veil/purchase/stream', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task }),
       });
-      setLast(body);
-      setLastCreatedAt(Date.now());
-      onResult?.({
-        ok: body.ok,
-        text: body.ok
-          ? `Order ${body.orderId} settled through the rail.` + (body.onchainRecordTxHash ? ` AgentPayment on-chain: ${body.onchainRecordTxHash.slice(0, 10)}…${body.onchainRecordTxHash.slice(-6)}` : '')
-          : `Refused: ${body.reason}`,
-      });
+      if (!res.ok || !res.body) throw new Error(`stream failed: ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) eventType = line.slice(7);
+          else if (line.startsWith('data: ')) {
+            const json = line.slice(6);
+            if (eventType === 'progress') {
+              const p = JSON.parse(json) as ToolProgress;
+              setToolSteps((prev) => {
+                const next = [...prev];
+                const idx = next.findIndex((s) => s.step === p.step);
+                if (idx >= 0) next[idx] = p; else next.push(p);
+                return next;
+              });
+            } else if (eventType === 'done') {
+              const body = JSON.parse(json) as { ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string; zkTxHash?: string | null };
+              setLast(body);
+              setLastCreatedAt(Date.now());
+              onResult?.({
+                ok: body.ok,
+                text: body.ok
+                  ? `Order ${body.orderId} settled through the rail.` + (body.onchainRecordTxHash ? ` AgentPayment on-chain: ${body.onchainRecordTxHash.slice(0, 10)}…${body.onchainRecordTxHash.slice(-6)}` : '')
+                  : `Refused: ${body.reason}`,
+              });
+            } else if (eventType === 'error') {
+              const err = JSON.parse(json) as { error: string };
+              setLast({ ok: false, reason: err.error });
+              onResult?.({ ok: false, text: err.error });
+            }
+          }
+        }
+      }
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
       setLast({ ok: false, reason: err });
@@ -141,6 +187,7 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
     setTab(newTab);
     setTask(newTab === 'direct' ? DIRECT_SUGGESTED[0] : DELEGATE_SUGGESTED[0]);
     setLast(null);
+    setToolSteps([]);
     setLastDelegate(null);
   };
 
@@ -149,13 +196,6 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
   return (
     <Card title="Purchase Console" right={<span className="font-mono text-[11px] text-mut">{tab === 'direct' ? '8 tools · mandate-gated' : 'A2A delegation'}</span>}>
       <div className="flex flex-col gap-4">
-        {mode === 'production' && (
-          <div className="flex items-center gap-2 rounded-lg border border-bad/30 bg-bad/5 px-4 py-2.5">
-            <Warning size={14} className="shrink-0 text-bad" />
-            <span className="text-xs text-bad/80">Live mode — real CTC gas fees apply on Sepolia + CC3</span>
-          </div>
-        )}
-
         {/* Tab buttons */}
         <div className="flex gap-1 rounded-lg border border-line bg-panel2/40 p-1">
           <button
@@ -192,20 +232,32 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
         {/* Direct mode result */}
         {tab === 'direct' && (
           <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-line bg-panel2/60 px-4 py-2.5">
-            <StatusChip status={last && !last.ok ? 'REJECTED' : 'PENDING'} label="agent" />
+            <StatusChip status={last && !last.ok ? 'REJECTED' : busy ? 'PENDING' : 'PENDING'} label={busy ? 'executing' : 'agent'} />
             <span className="font-mono text-[13px] text-mut">
-              {last
-                ? last.ok
-                  ? `ok · order ${last.orderId}`
-                  : last.reason
-                : 'idle · deterministic planner + 8-tool surface'}
+              {busy
+                ? `running · ${toolSteps.filter((s) => s.status === 'done').length}/${toolSteps.length || '?'} tools verified`
+                : last
+                  ? last.ok
+                    ? `ok · order ${last.orderId}`
+                    : last.reason
+                  : 'idle · deterministic planner + 8-tool surface'}
             </span>
           </div>
+        )}
+
+        {/* Live tool progress during execution */}
+        {tab === 'direct' && busy && toolSteps.length > 0 && (
+          <ToolProgressPanel steps={toolSteps} />
         )}
 
         {/* Direct mode pipeline after successful purchase */}
         {tab === 'direct' && last && last.ok && last.orderId && (
           <PurchasePipeline order={last} createdAt={lastCreatedAt} />
+        )}
+
+        {/* Final tool results after purchase */}
+        {tab === 'direct' && last && last.ok && toolSteps.length > 0 && (
+          <ToolProgressPanel steps={toolSteps} />
         )}
 
         {/* Delegate mode result */}

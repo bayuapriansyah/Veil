@@ -84,13 +84,11 @@ export async function recordAgentPayment(
       opts.amount,
       opts.serviceId,
       opts.transactionRef,
+      { gasLimit: 100_000 },
     );
-    // Broadcast is the fact: return the hash immediately so the rail never
-    // blocks on a flaky confirmation. The Attestcoin worker proves the tx once
-    // it is mined (it re-checks receipts), upgrading the vault to verified.
-    // A revert here (rare — order-id reuse) simply never gets proven.
     try {
-      const receipt = await tx.wait(1, 8_000);
+      const receipt = await tx.wait();
+      if (receipt.status === 0) return { ok: false, error: 'tx reverted on-chain' };
       return { ok: true, txHash: receipt.hash };
     } catch {
       return { ok: true, txHash: tx.hash };
@@ -144,9 +142,11 @@ export async function recordFulfillment(
       opts.resultHash,
       opts.serviceId,
       opts.transactionRef,
+      { gasLimit: 100_000 },
     );
     try {
-      const receipt = await tx.wait(1, 8_000);
+      const receipt = await tx.wait();
+      if (receipt.status === 0) return { ok: false, error: 'tx reverted on-chain' };
       return { ok: true, txHash: receipt.hash };
     } catch {
       return { ok: true, txHash: tx.hash };
@@ -199,9 +199,11 @@ export async function recordZKReceipt(
       opts.provider,
       opts.zkProofHash,
       opts.serviceId,
+      { gasLimit: 100_000 },
     );
     try {
-      const receipt = await tx.wait(1, 8_000);
+      const receipt = await tx.wait();
+      if (receipt.status === 0) return { ok: false, error: 'tx reverted on-chain' };
       return { ok: true, txHash: receipt.hash };
     } catch {
       return { ok: true, txHash: tx.hash };
