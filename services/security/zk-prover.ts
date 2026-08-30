@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ethers } from 'ethers';
+import { fork } from 'node:child_process';
 
 export interface ZKProofResult {
   ok: boolean;
@@ -17,7 +18,8 @@ let _zkeyBuffer: Buffer | null = null;
 function loadCircuitArtifacts(): { wasm: Buffer; zkey: Buffer } {
   if (_wasmBuffer && _zkeyBuffer) return { wasm: _wasmBuffer, zkey: _zkeyBuffer };
 
-  const circuitsDir = join(process.cwd(), 'circuits');
+  const root = findProjectRoot();
+  const circuitsDir = join(root, 'circuits');
   const wasmPath = join(circuitsDir, 'zk-receipt.wasm');
   const zkeyPath = join(circuitsDir, 'zk-receipt_final.zkey');
 
@@ -27,6 +29,41 @@ function loadCircuitArtifacts(): { wasm: Buffer; zkey: Buffer } {
   _wasmBuffer = readFileSync(wasmPath);
   _zkeyBuffer = readFileSync(zkeyPath);
   return { wasm: _wasmBuffer, zkey: _zkeyBuffer };
+}
+
+function findProjectRoot(): string {
+  const cwd = process.cwd();
+  if (existsSync(join(cwd, 'circuits'))) return cwd;
+  if (existsSync(join(cwd, '..', 'circuits'))) return join(cwd, '..');
+  return cwd;
+}
+
+function forkProver(input: { orderId: string; resultData: string; salt: string; providerAddress: string; serviceId: string }): Promise<{ ok: boolean; proof?: any; publicSignals?: string[]; error?: string }> {
+  return new Promise((resolve) => {
+    const root = findProjectRoot();
+    const workerPath = join(root, 'services', 'security', 'zk-prover-worker.js');
+    const child = fork(workerPath, { cwd: root, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
+
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      resolve({ ok: false, error: 'snarkjs prover process timed out after 30s' });
+    }, 30_000);
+
+    child.on('message', (msg: any) => {
+      clearTimeout(timer);
+      resolve(msg);
+      child.kill();
+    });
+
+    child.on('close', () => { clearTimeout(timer); });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: err.message });
+    });
+
+    child.send(input);
+  });
 }
 
 export async function generateZKReceipt(
@@ -39,21 +76,22 @@ export async function generateZKReceipt(
   const orderIdStr = orderId.toString();
 
   try {
-    const snarkjs = await import('snarkjs');
+    loadCircuitArtifacts();
 
-    const { wasm, zkey } = loadCircuitArtifacts();
-
-    const input = {
+    const result = await forkProver({
+      orderId: orderIdStr,
       resultData: resultData.toString(),
       salt: salt.toString(),
-      orderId: orderId.toString(),
-      provider: BigInt(providerAddress).toString(),
-      serviceId: ethers.keccak256(ethers.toUtf8Bytes(serviceId)),
-    };
+      providerAddress,
+      serviceId,
+    });
 
-    const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, wasm, zkey);
+    if (!result.ok || !result.proof) {
+      return { ok: false, orderId: orderIdStr, zkProofHash: '', error: result.error ?? 'proof generation failed' };
+    }
 
-    const zkProofHashDec = publicSignals[3];
+    const { proof, publicSignals } = result;
+    const zkProofHashDec = publicSignals![3];
     const zkProofHash = '0x' + BigInt(zkProofHashDec).toString(16).padStart(64, '0');
 
     const proofA: [string, string] = [proof.pi_a[0], proof.pi_a[1]];
@@ -83,7 +121,8 @@ export async function verifyZKProof(
   try {
     const snarkjs = await import('snarkjs');
     const { zkey } = loadCircuitArtifacts();
-    const vKey = JSON.parse(readFileSync(join(process.cwd(), 'circuits', 'verification_key.json'), 'utf8'));
+    const root = findProjectRoot();
+    const vKey = JSON.parse(readFileSync(join(root, 'circuits', 'verification_key.json'), 'utf8'));
     return await snarkjs.groth16.verify(vKey, publicInputs, proof);
   } catch {
     return false;

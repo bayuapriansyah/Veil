@@ -314,7 +314,7 @@ export class VeilProvider {
           }
         }
       }
-    } catch { /* best-effort ZK recording */ }
+    } catch (e) { console.error('[provider] ZK receipt recording failed', e instanceof Error ? e.message : e); }
 
     return { resultHash, fulfillmentVerified: await this.ledger.isFulfillmentVerified(orderId), zkProofHash, zkTxHash };
   }

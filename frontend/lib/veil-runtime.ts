@@ -242,7 +242,7 @@ class VeilRuntime {
           zkTxHash = zkRecord.txHash;
         }
       }
-    } catch { /* best-effort ZK recording */ }
+    } catch (e) { console.error('[runtime] ZK receipt recording failed', e instanceof Error ? e.message : e); }
 
     const order: RuntimeOrder = {
       orderId: outcome.orderId,
