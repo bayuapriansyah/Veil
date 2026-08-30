@@ -26,6 +26,8 @@ export interface OrderDetail {
   escrowStatus: 'None' | 'Locked' | 'Released' | 'Refunded';
   onchainRecordTxHash?: string | null;
   fulfillmentTxHash?: string | null;
+  zkProofHash?: string;
+  zkTxHash?: string | null;
   stages: TimelineStage[];
 }
 

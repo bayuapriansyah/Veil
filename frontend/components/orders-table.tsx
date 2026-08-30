@@ -1,12 +1,51 @@
 'use client';
 
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import { OrderDetail, SEPOLIA_EXPLORER, atomsUsd, timeAgo, txShort } from '../lib/veil-client';
 import { Empty, StatusChip, TxId } from './ui';
+
+const ATTESTATION_WINDOW_MS = 6 * 60 * 1000;
 
 function overall(order: OrderDetail): OrderDetail['stages'][number]['status'] {
   if (order.stages.length === 0) return 'PENDING';
   return order.stages[order.stages.length - 1].status;
+}
+
+function ProgressMini({ order }: { order: OrderDetail }): React.ReactElement {
+  const total = order.stages.length;
+  const done = order.stages.filter((s) => s.status === 'VERIFIED' || s.status === 'SETTLED').length;
+  const pct = total > 0 ? (done / total) * 100 : 0;
+  const allDone = pct >= 100;
+
+  const elapsed = Date.now() - order.createdAt;
+  const rem = Math.max(0, ATTESTATION_WINDOW_MS - elapsed);
+  const remMin = Math.floor(rem / 60_000);
+
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (allDone || rem <= 0) return;
+    const id = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, [allDone, rem]);
+
+  const liveRem = Math.max(0, ATTESTATION_WINDOW_MS - (now - order.createdAt));
+  const liveMin = Math.floor(liveRem / 60_000);
+
+  const barColor = pct >= 100 ? 'bg-ok' : pct >= 60 ? 'bg-attest' : pct >= 30 ? 'bg-pend' : 'bg-ok/60';
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="h-1.5 overflow-hidden rounded-full bg-panel2" style={{ width: 80 }}>
+        <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
+      </div>
+      {!allDone && liveRem > 0 && (
+        <span className="font-mono text-[10px] text-attest/80">
+          ≈{liveMin}m left
+        </span>
+      )}
+    </div>
+  );
 }
 
 function ExplorerLink({ href, label }: { href: string; label: string }): React.ReactElement {
@@ -33,6 +72,7 @@ export function OrdersTable({ orders }: { orders: OrderDetail[] }): React.ReactE
             <th className="pb-3 pr-5">Service</th>
             <th className="pb-3 pr-5">Provider</th>
             <th className="pb-3 pr-5 text-right">Amount</th>
+            <th className="pb-3 pr-5">Pipeline</th>
             <th className="pb-3 pr-5">Settlement</th>
             <th className="pb-3">When</th>
           </tr>
@@ -65,6 +105,9 @@ export function OrdersTable({ orders }: { orders: OrderDetail[] }): React.ReactE
                 <span className="font-mono text-[13px] text-mut">{o.provider.slice(0, 10)}…</span>
               </td>
               <td className="py-3.5 pr-5 text-right font-mono text-[13px] text-mut">{atomsUsd(o.amountAtoms)} USD</td>
+              <td className="py-3.5 pr-5">
+                <ProgressMini order={o} />
+              </td>
               <td className="py-3.5 pr-5">
                 <StatusChip status={overall(o)} />
               </td>

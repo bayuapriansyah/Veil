@@ -23,6 +23,7 @@ import { ProcurementAgent } from '../../services/procurement/agent';
 import { isDemoMode, resolveVeilMode, type VeilMode } from '../../services/config/mode';
 import { recordAgentPayment, recordFulfillment, recordZKReceipt } from '../../services/attestation/record';
 import { generateZKReceipt, computeResultData, randomSalt } from '../../services/security/zk-prover';
+import type { PublicTxView } from '../../services/audit/types';
 import { delegateToAgentB, checkAgentBHealth, resolveAgentBAddress, resolveAgentBUrl, type AgentBDelegationResult } from '../../services/agent-b/client';
 
 export const PRICE_ATOMS = BigInt('1000000000000000'); // 0.001 per call
@@ -263,7 +264,7 @@ class VeilRuntime {
 
     // Record into the audit vault (encrypted at rest; public view only).
     await this.recordAudit(order, outcome);
-    return { ok: true, orderId: outcome.orderId, onchainRecordTxHash: order.onchainRecordTxHash, fulfillmentTxHash: order.fulfillmentTxHash };
+    return { ok: true, orderId: outcome.orderId, onchainRecordTxHash: order.onchainRecordTxHash, fulfillmentTxHash: order.fulfillmentTxHash, zkProofHash: order.zkProofHash, zkTxHash: order.zkTxHash };
   }
 
   /**
@@ -530,7 +531,7 @@ class VeilRuntime {
 
   // --- audit API (real vault + signed auditor flow) ---------------------- //
 
-  async auditTxs(): Promise<Array<{ txId: string; commitment: string; verificationStatus: string; policyStatus: string; settlementStatus: string; createdAt: number; encrypted: boolean }>> {
+  async auditTxs(): Promise<PublicTxView[]> {
     await this.start();
     return this.vault.list();
   }
@@ -616,9 +617,11 @@ function successStages(finalSettlement: 'SETTLED' | 'PENDING'): TimelineStage[] 
   return [
     { key: 'authorization', label: 'Authorization', status: 'VERIFIED', note: 'mandate valid · budget compliant' },
     { key: 'payment', label: 'Payment', status: 'VERIFIED', note: 'AgentPayment recorded (veil-exact)' },
-    { key: 'payment-attestation', label: 'Attestation', status: 'VERIFIED', note: live ? 'payment attestation proven on Creditcoin' : 'payment attestation (mirror)' },
+    { key: 'payment-attestation', label: 'Payment Attestation', status: 'VERIFIED', note: live ? 'payment attestation proven on Creditcoin' : 'payment attestation (mirror)' },
     { key: 'fulfillment', label: 'Fulfillment', status: 'VERIFIED', note: 'result hash recorded' },
-    { key: 'fulfillment-attestation', label: 'Attestation', status: 'VERIFIED', note: live ? 'fulfillment attestation proven on Creditcoin' : 'fulfillment attestation (mirror)' },
+    { key: 'fulfillment-attestation', label: 'Fulfillment Attestation', status: 'VERIFIED', note: live ? 'fulfillment attestation proven on Creditcoin' : 'fulfillment attestation (mirror)' },
+    { key: 'zk-receipt', label: 'ZK Receipt', status: 'VERIFIED', note: live ? 'Poseidon(2) commitment recorded on source chain' : 'ZK receipt (mirror)' },
+    { key: 'zk-attestation', label: 'ZK Attestation', status: 'VERIFIED', note: live ? 'ZK proof verified on Creditcoin — same ~6min window for every order' : 'ZK attestation (mirror)' },
     { key: 'settlement', label: 'Settlement', status: finalSettlement, note: finalSettlement === 'SETTLED' ? 'escrow released by operator' : 'escrow locked — awaiting operator' },
   ];
 }

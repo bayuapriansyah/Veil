@@ -48,6 +48,8 @@ export class SupabaseVault implements VaultBackend {
     this.keySource = keySource;
   }
 
+  private migratedZk = false;
+
   async recordTransaction(input: TransactionInput): Promise<{ record: TransactionRecord; view: PublicTxView }> {
     const createdAt = input.createdAt ?? Math.floor(Date.now() / 1000);
     const txId = input.txId ?? `veil-${createdAt}`;
@@ -72,7 +74,14 @@ export class SupabaseVault implements VaultBackend {
       zkProofHash: input.zkProofHash,
       zkReceiptStatus: input.zkReceiptStatus,
     };
-    const { error } = await this.supabase.from('vault_transactions').upsert(recordToRow(record));
+    let row = recordToRow(record);
+    let { error } = await this.supabase.from('vault_transactions').upsert(row);
+    if (error && !this.migratedZk && (error.message?.includes('zk_proof_hash') || error.message?.includes('zk_receipt_status') || error.message?.includes('column'))) {
+      delete row.zk_proof_hash;
+      delete row.zk_receipt_status;
+      ({ error } = await this.supabase.from('vault_transactions').upsert(row));
+      this.migratedZk = true;
+    }
     if (error) throw new Error(error.message);
     return { record, view: publicView(record) };
   }
@@ -81,8 +90,14 @@ export class SupabaseVault implements VaultBackend {
     const patch: Record<string, unknown> = { attestation_status: opts.attestationStatus, updated_at: Math.floor(Date.now() / 1000) };
     if (opts.attestationTx) patch.attestation_tx = opts.attestationTx;
     if (opts.sourceTx) patch.source_tx = opts.sourceTx;
-    if (opts.zkReceiptStatus) patch.zk_receipt_status = opts.zkReceiptStatus;
-    return this.updateKnown(txId, patch);
+    if (opts.zkReceiptStatus && !this.migratedZk) patch.zk_receipt_status = opts.zkReceiptStatus;
+    let result = await this.updateKnown(txId, patch);
+    if (!result.ok && opts.zkReceiptStatus && !this.migratedZk && result.error?.includes('column')) {
+      delete patch.zk_receipt_status;
+      this.migratedZk = true;
+      result = await this.updateKnown(txId, patch);
+    }
+    return result;
   }
 
   async attachSettlement(txId: string, opts: { settlementStatus?: string; settlementTx?: string; escrowTx?: string; mandateId?: string }): Promise<{ ok: boolean; error?: string }> {

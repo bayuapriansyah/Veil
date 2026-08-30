@@ -8,7 +8,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (!task) return NextResponse.json({ ok: false, error: 'task is required' }, { status: 400 });
     const rt = await getRuntime();
     const result = await rt.purchase(task);
-    return NextResponse.json({ ok: result.ok, orderId: result.orderId, reason: result.reason, onchainRecordTxHash: result.onchainRecordTxHash, fulfillmentTxHash: result.fulfillmentTxHash });
+    return NextResponse.json({ ok: result.ok, orderId: result.orderId, reason: result.reason, onchainRecordTxHash: result.onchainRecordTxHash, fulfillmentTxHash: result.fulfillmentTxHash, zkProofHash: result.zkProofHash, zkTxHash: result.zkTxHash });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

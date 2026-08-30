@@ -1,9 +1,69 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Warning } from '@phosphor-icons/react';
 import { api, VeilState, atomsUsd, useVeilMode, shortAddress } from '../lib/veil-client';
 import { Card, StatusChip } from './ui';
+
+const ATTESTATION_WINDOW_MS = 6 * 60 * 1000;
+
+function PurchasePipeline({ order, createdAt }: { order: { ok: boolean; orderId?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string }; createdAt: number }): React.ReactElement {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const rem = Math.max(0, ATTESTATION_WINDOW_MS - (now - createdAt));
+  const remMin = Math.floor(rem / 60_000);
+  const remSec = Math.floor((rem % 60_000) / 1000);
+  const allDone = rem <= 0;
+
+  const steps = [
+    { label: 'Authorization', done: true },
+    { label: 'Payment', done: !!order.onchainRecordTxHash },
+    { label: 'Fulfillment', done: !!order.fulfillmentTxHash },
+    { label: 'ZK Receipt', done: !!order.zkProofHash },
+    { label: 'Attestation', done: allDone, pending: !allDone },
+    { label: 'Settlement', done: false },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  const pct = (doneCount / steps.length) * 100;
+
+  return (
+    <div className="rounded-lg border border-attest/30 bg-attest/5 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[13px] font-medium text-ink">Pipeline</span>
+        {!allDone ? (
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-attest opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-attest" />
+            </span>
+            <span className="font-mono text-[12px] text-attest">
+              {remMin}m {remSec.toString().padStart(2, '0')}s
+            </span>
+          </div>
+        ) : (
+          <span className="font-mono text-[12px] text-ok">attested</span>
+        )}
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-panel2">
+        <div className="h-full rounded-full bg-attest transition-all duration-700" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        {steps.map((s) => (
+          <span key={s.label} className={`font-mono ${s.done ? 'text-ok' : s.pending ? 'text-attest' : 'text-mut/50'}`}>
+            {s.done ? '✓' : s.pending ? '◦' : '·'} {s.label}
+          </span>
+        ))}
+      </div>
+      <p className="mt-2.5 text-[11px] leading-relaxed text-mut">
+        Every order enters the same ~6 min attestation window on Creditcoin — no fast track, same cost for all participants.
+      </p>
+    </div>
+  );
+}
 
 const DIRECT_SUGGESTED = ['Buy one unit of live market data for my trading dashboard', 'Purchase a market data feed (one call)'];
 const DELEGATE_SUGGESTED = ['Delegate market data purchase to Agent B', 'Have Agent B buy compute rental', 'Ask Agent B to purchase storage access'];
@@ -25,18 +85,20 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
   const [tab, setTab] = useState<'direct' | 'delegate'>('direct');
   const [task, setTask] = useState(DIRECT_SUGGESTED[0]);
   const [busy, setBusy] = useState(false);
-  const [last, setLast] = useState<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null } | null>(null);
+  const [last, setLast] = useState<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string } | null>(null);
+  const [lastCreatedAt, setLastCreatedAt] = useState(0);
   const [lastDelegate, setLastDelegate] = useState<DelegateResult | null>(null);
   const mode = useVeilMode();
 
   const run = async (): Promise<void> => {
     setBusy(true);
     try {
-      const body = await api<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null }>('/api/veil/purchase', {
+      const body = await api<{ ok: boolean; orderId?: string; reason?: string; onchainRecordTxHash?: string | null; fulfillmentTxHash?: string | null; zkProofHash?: string }>('/api/veil/purchase', {
         method: 'POST',
         body: JSON.stringify({ task }),
       });
       setLast(body);
+      setLastCreatedAt(Date.now());
       onResult?.({
         ok: body.ok,
         text: body.ok
@@ -139,6 +201,11 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
                 : 'idle · deterministic planner + 8-tool surface'}
             </span>
           </div>
+        )}
+
+        {/* Direct mode pipeline after successful purchase */}
+        {tab === 'direct' && last && last.ok && last.orderId && (
+          <PurchasePipeline order={last} createdAt={lastCreatedAt} />
         )}
 
         {/* Delegate mode result */}
