@@ -34,10 +34,14 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     // FulfillmentReceipt(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef)
     bytes32 public constant FULFILLMENT_RECEIPT_EVENT_SIGNATURE =
         keccak256("FulfillmentReceipt(uint256,address,bytes32,bytes32,bytes32)");
+    // SecurityScanRecorded(address indexed provider, bytes32 indexed bytecodeHash, uint8 riskScore, bool passedThreshold, address scanner)
+    bytes32 public constant SECURITY_SCAN_EVENT_SIGNATURE =
+        keccak256("SecurityScanRecorded(address,bytes32,uint8,bool,address)");
 
     enum Actions {
         Payment, // 0
-        Fulfillment // 1
+        Fulfillment, // 1
+        SecurityScan // 2
     }
 
     // ------------------------------------------------------------------ //
@@ -50,6 +54,9 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     mapping(uint256 => address) public verifiedProvider;
     mapping(uint256 => bool) public fulfillmentsVerified;
     mapping(uint256 => bytes32) public verifiedResultHash;
+    mapping(uint256 => bool) public securityScansVerified;
+    mapping(uint256 => uint8) public verifiedRiskScore;
+    mapping(uint256 => bool) public verifiedPassedThreshold;
 
     /// The single source-chain contract allowed to emit the events we act on.
     /// Only events emitted by this address are accepted (see EvmV1Decoder usage).
@@ -65,6 +72,7 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     event SourceContractRegistered(address indexed veilSource);
     event PaymentVerified(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 queryId);
     event FulfillmentVerified(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 queryId);
+    event SecurityScanVerified(uint256 indexed providerKey, uint8 riskScore, bool passedThreshold, bytes32 queryId);
     event QueryProcessed(bytes32 indexed queryId, uint8 indexed action);
 
     constructor() Ownable(msg.sender) {
@@ -170,6 +178,8 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
             _processPayment(queryId, encodedTransaction);
         } else if (action == uint8(Actions.Fulfillment)) {
             _processFulfillment(queryId, encodedTransaction);
+        } else if (action == uint8(Actions.SecurityScan)) {
+            _processSecurityScan(queryId, encodedTransaction);
         } else {
             revert InvalidAction(action);
         }
@@ -215,6 +225,27 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
         verifiedResultHash[orderId] = resultHash;
 
         emit FulfillmentVerified(orderId, provider, resultHash, queryId);
+    }
+
+    function _processSecurityScan(bytes32 queryId, bytes memory encodedTransaction) internal {
+        EvmV1Decoder.LogEntry[] memory logs = _validateTransactionContents(
+            encodedTransaction, SECURITY_SCAN_EVENT_SIGNATURE
+        );
+
+        EvmV1Decoder.LogEntry memory log = logs[0];
+        if (log.topics.length != 3) revert();
+
+        address provider = address(uint160(uint256(log.topics[1])));
+        bytes32 bytecodeHash = bytes32(log.topics[2]);
+
+        (uint8 riskScore, bool passedThreshold, ) = abi.decode(log.data, (uint8, bool, address));
+
+        uint256 providerKey = uint256(uint160(provider));
+        securityScansVerified[providerKey] = true;
+        verifiedRiskScore[providerKey] = riskScore;
+        verifiedPassedThreshold[providerKey] = passedThreshold;
+
+        emit SecurityScanVerified(providerKey, riskScore, passedThreshold, queryId);
     }
 
     /// @dev Validates a decoded transaction and returns matching event logs.
@@ -263,5 +294,17 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
 
     function verifiedProviderOf(uint256 orderId) external view returns (address) {
         return verifiedProvider[orderId];
+    }
+
+    function isSecurityScanVerified(address provider) external view returns (bool) {
+        return securityScansVerified[uint256(uint160(provider))];
+    }
+
+    function verifiedRiskScoreOf(address provider) external view returns (uint8) {
+        return verifiedRiskScore[uint256(uint160(provider))];
+    }
+
+    function verifiedPassedThresholdOf(address provider) external view returns (bool) {
+        return verifiedPassedThreshold[uint256(uint160(provider))];
     }
 }

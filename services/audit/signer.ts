@@ -56,7 +56,7 @@ export interface VerifyAuditAccessOpts {
   expectedTxId: string;
   now?: number;
   /** Authorizer predicate: true only if the recovered signer may see the data. */
-  isAuthorized: (auditor: string) => boolean;
+  isAuthorized: (auditor: string) => Promise<boolean>;
 }
 
 export interface VerifyAuditResult {
@@ -72,7 +72,7 @@ export interface VerifyAuditResult {
  *   3. must not be expired
  *   4. the recovered signer must be authorized (vault decides)
  */
-export function verifyAuditAccess(req: AuditAccessRequest, opts: VerifyAuditAccessOpts): VerifyAuditResult {
+export async function verifyAuditAccess(req: AuditAccessRequest, opts: VerifyAuditAccessOpts): Promise<VerifyAuditResult> {
   const now = opts.now ?? Math.floor(Date.now() / 1000);
   if (req.resource !== opts.expectedResource) {
     return { ok: false, error: 'resource mismatch' };
@@ -98,7 +98,7 @@ export function verifyAuditAccess(req: AuditAccessRequest, opts: VerifyAuditAcce
   if (recovered.toLowerCase() !== req.auditor.toLowerCase()) {
     return { ok: false, error: 'signature does not recover to claimed auditor' };
   }
-  if (!opts.isAuthorized(recovered)) {
+  if (!(await opts.isAuthorized(recovered))) {
     return { ok: false, error: 'authorization revoked or never granted' };
   }
   return { ok: true, auditor: recovered };

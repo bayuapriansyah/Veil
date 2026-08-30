@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowDownRight, List, X } from '@phosphor-icons/react';
@@ -62,10 +63,7 @@ export function Nav(): React.ReactElement {
         }`}
       >
         <Link href="/" className="flex items-center gap-2.5 pl-2" onClick={() => setOpen(false)}>
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-attest/40 bg-attest/10 font-mono text-xs font-semibold text-attest">
-            V
-          </span>
-          <span className="font-mono text-sm font-semibold tracking-[0.2em] text-ink">VEIL</span>
+          <Image src="/logo.jpg" alt="VEIL" width={100} height={28} className="h-7 w-auto object-contain" priority />
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex" aria-label="Landing">

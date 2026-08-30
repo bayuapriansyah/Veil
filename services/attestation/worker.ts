@@ -3,6 +3,8 @@ import { loadConfig, VeilConfig, sourcePollProvider, creditcoinProvider } from '
 import { generateProofFor, ProofGenerationResult } from './generateProof';
 import { SettlementResult, trySettleOrder } from './settle';
 import { createServer } from 'node:http';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 /**
  * VEIL Attestcoin worker.
@@ -24,11 +26,13 @@ const ATTESTATION_RECEIVER_EXECUTE_ABI = [
   'function execute(uint8 action, uint64 chainKey, uint64 blockHeight, bytes calldata encodedTransaction, bytes32 merkleRoot, tuple(bytes32 hash, bool isLeft)[] calldata siblings, bytes32 lowerEndpointDigest, bytes32[] calldata continuityRoots) external returns (bool)',
   'event PaymentVerified(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 queryId)',
   'event FulfillmentVerified(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 queryId)',
+  'event SecurityScanVerified(uint256 indexed providerKey, uint8 riskScore, bool passedThreshold, bytes32 queryId)',
 ];
 
 const VEIL_SOURCE_ABI = [
   'event AgentPayment(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef)',
   'event FulfillmentReceipt(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef)',
+  'event SecurityScanRecorded(address indexed provider, bytes32 indexed bytecodeHash, uint8 riskScore, bool passedThreshold, address scanner)',
 ];
 
 // --- Structured logging ---------------------------------------------------- //
@@ -214,9 +218,24 @@ async function main() {
   const receiverContract = new Contract(config.attestationReceiverAddress, ATTESTATION_RECEIVER_EXECUTE_ABI, wallet);
   const veilSource = new Contract(config.sourceChainContractAddress, VEIL_SOURCE_ABI, srcProvider);
 
-  let fromBlock = Number(process.env.WORKER_FROM_BLOCK ?? (await srcProvider.getBlockNumber()));
+  const stateDir = join(process.cwd(), '.veil');
+  const stateFile = join(stateDir, 'worker-state.json');
+  let fromBlock: number;
+  if (process.env.WORKER_FROM_BLOCK) {
+    fromBlock = Number(process.env.WORKER_FROM_BLOCK);
+  } else if (existsSync(stateFile)) {
+    try {
+      const saved = JSON.parse(readFileSync(stateFile, 'utf8'));
+      fromBlock = saved.fromBlock ?? (await srcProvider.getBlockNumber());
+    } catch {
+      fromBlock = await srcProvider.getBlockNumber();
+    }
+  } else {
+    const latest = await srcProvider.getBlockNumber();
+    fromBlock = latest - 5000;
+  }
   const processedTxs = new Set<string>();
-  const pending = new Map<string, { action: number; orderId?: string }>();
+  const pending = new Map<string, { action: number; orderId?: string; providerKey?: string }>();
   const settledOrders = new Set<string>();
   const attachUrl = process.env.WORKER_AUDIT_ATTACH_URL ?? 'http://127.0.0.1:3000/api/veil/audit/attach';
   const healthPort = Number(process.env.WORKER_HEALTH_PORT ?? '8082');
@@ -240,9 +259,10 @@ async function main() {
         fromBlock = latest;
       }
 
-      const [payments, fulfillments] = await Promise.all([
+      const [payments, fulfillments, securityScans] = await Promise.all([
         veilSource.queryFilter('AgentPayment', fromBlock, latest),
         veilSource.queryFilter('FulfillmentReceipt', fromBlock, latest),
+        veilSource.queryFilter('SecurityScanRecorded', fromBlock, latest),
       ]);
 
       for (const ev of payments) {
@@ -257,10 +277,22 @@ async function main() {
         pending.set(txHash, { action: 1, orderId: 'args' in ev && ev.args ? ev.args[0]?.toString() : undefined });
         log('info', 'FulfillmentReceipt detected', { order: 'args' in ev && ev.args ? String(ev.args[0]) : '?', tx: txHash });
       }
+      for (const ev of securityScans) {
+        const txHash = ev.transactionHash;
+        if (processedTxs.has(txHash) || pending.has(txHash)) continue;
+        const provider = 'args' in ev && ev.args ? ev.args[0]?.toString() : undefined;
+        pending.set(txHash, { action: 2, providerKey: provider });
+        log('info', 'SecurityScanRecorded detected', { provider: provider ?? '?', tx: txHash });
+      }
 
       fromBlock = latest + 1;
 
-      for (const [txHash, { action, orderId }] of [...pending]) {
+      try {
+        if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
+        writeFileSync(stateFile, JSON.stringify({ fromBlock, ts: new Date().toISOString() }));
+      } catch { /* best-effort */ }
+
+      for (const [txHash, { action, orderId, providerKey }] of [...pending]) {
         try {
           const proof = await withRetry(
             () => generateProofFor(txHash, config.sourceChainKey, config.proofBuilderUrl, ccProvider, srcProvider),
@@ -290,6 +322,8 @@ async function main() {
                 if (res.done) settledOrders.add(orderId);
               }
               await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash, settlement).catch((e: any) => log('error', 'Vault notify failed', { orderId, error: e?.message ?? e }));
+            } else if (action === 2 && providerKey !== undefined) {
+              await notifyVault(attachUrl, `security-${providerKey}`, hash, txHash).catch((e: any) => log('error', 'Vault notify failed', { provider: providerKey, error: e?.message ?? e }));
             }
           } else {
             log('info', 'Proof pending', { action, tx: txHash, reason: proof.error });
@@ -300,9 +334,6 @@ async function main() {
         }
       }
 
-      if (processedTxs.size > MAX_PROCESSED_TXS) {
-        processedTxs.clear();
-      }
     } catch (e: any) {
       errorCount++;
       log('error', 'Poll cycle error', { error: e?.message ?? e });

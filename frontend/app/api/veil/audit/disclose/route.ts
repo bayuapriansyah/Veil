@@ -9,7 +9,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const body = (await req.json().catch(() => ({}))) as { txId?: string; fields?: string[] };
     if (!body.txId) return NextResponse.json({ ok: false, error: 'txId is required' }, { status: 400 });
     const rt = await getRuntime();
-    const result = rt.discloseAuditor(body.txId, body.fields);
+    const result = await rt.discloseAuditor(body.txId, body.fields);
     if (!result.ok) return NextResponse.json({ ok: false, error: result.error ?? 'disclosure failed' }, { status: 403 });
     return NextResponse.json({ ok: true, data: result.data });
   } catch (e) {

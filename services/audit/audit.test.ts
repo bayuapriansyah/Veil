@@ -67,14 +67,14 @@ interface Harness {
 describe('VEIL privacy & audit layer', () => {
   let h: Harness;
   let baseUrl: string;
-  let recordViaVault: (txId: string, statuses?: Partial<Record<'verificationStatus' | 'policyStatus' | 'settlementStatus', string>>) => void;
+  let recordViaVault: (txId: string, statuses?: Partial<Record<'verificationStatus' | 'policyStatus' | 'settlementStatus', string>>) => Promise<void>;
 
   before(async () => {
     const started = await startAuditServer({ operatorAddress: OPERATOR, vaultKey: TEST_VAULT_KEY });
     h = { baseUrl: `http://127.0.0.1:${started.port}`, vault: started.vault, close: started.close };
     baseUrl = h.baseUrl;
-    recordViaVault = (txId, statuses = {}) => {
-      started.vault.recordTransaction({
+    recordViaVault = async (txId, statuses = {}) => {
+      await started.vault.recordTransaction({
         txId,
         verificationStatus: statuses.verificationStatus ?? 'payment-verified fulfilment-verified',
         policyStatus: statuses.policyStatus ?? 'mandate-valid budget-compliant',
@@ -98,7 +98,7 @@ describe('VEIL privacy & audit layer', () => {
 
   it('1. unauthorized auditor — signed request but no grant is denied; data stays sealed', async () => {
     const txId = 'tx-0001';
-    recordViaVault(txId);
+    await recordViaVault(txId);
     // INTRUDER signs correctly but was never authorized.
     const disclosure = await signedFetch(`/api/audit/disclosure/${txId}`, txId, INTRUDER_KEY);
     assert.equal(disclosure.status, 403);
@@ -121,7 +121,7 @@ describe('VEIL privacy & audit layer', () => {
 
   it('2. authorized auditor — operator grants access; auditor reads the full private record', async () => {
     const txId = 'tx-0002';
-    recordViaVault(txId);
+    await recordViaVault(txId);
     const authorize = await fetch(`${baseUrl}/api/audit/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-operator': OPERATOR },
@@ -142,10 +142,10 @@ describe('VEIL privacy & audit layer', () => {
 
   it('3. encrypted metadata — no plaintext at rest; AES-256-GCM tamper is detected', async () => {
     const txId = 'tx-0003';
-    recordViaVault(txId);
+    await recordViaVault(txId);
 
     // (a) The stored record must not contain any plaintext of sensitive fields.
-    const rawRecord = h.vault.get(txId)!;
+    const rawRecord = (await h.vault.get(txId))!;
     const raw = JSON.stringify(rawRecord);
     for (const needle of [AGENT, PROVIDER, sampleProtected(txId).amountAtoms, '0x' + 'f'.repeat(64), OPERATOR, 'veil-exact']) {
       assert.equal(raw.includes(needle.toLowerCase()) || raw.includes(needle), false, `record leaked plaintext "${needle}"`);
@@ -170,7 +170,7 @@ describe('VEIL privacy & audit layer', () => {
 
   it('4. successful disclosure — selective fields + full evidence bundle', async () => {
     const txId = 'tx-0004';
-    recordViaVault(txId);
+    await recordViaVault(txId);
     await fetch(`${baseUrl}/api/audit/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-operator': OPERATOR },
@@ -200,7 +200,7 @@ describe('VEIL privacy & audit layer', () => {
 
   it('5. revoked authorization — disclosure stops; nonce replay denied; public view unaffected', async () => {
     const txId = 'tx-0005';
-    recordViaVault(txId);
+    await recordViaVault(txId);
     const authorize = await fetch(`${baseUrl}/api/audit/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-operator': OPERATOR },
@@ -246,11 +246,11 @@ describe('VEIL privacy & audit layer', () => {
 
   it('6. attachSettlement — the on-chain settlement fact is a public-only update; commitment unchanged', async () => {
     const txId = 'tx-0006';
-    recordViaVault(txId, { settlementStatus: 'locked' });
-    const before = h.vault.publicView(txId)!;
+    await recordViaVault(txId, { settlementStatus: 'locked' });
+    const before = (await h.vault.publicView(txId))!;
     const commitmentBefore = before.commitment;
 
-    const res = h.vault.attachSettlement(txId, {
+    const res = await h.vault.attachSettlement(txId, {
       settlementStatus: 'settled',
       settlementTx: '0x' + 'ab'.repeat(32),
       escrowTx: '0x' + 'cd'.repeat(32),
@@ -258,7 +258,7 @@ describe('VEIL privacy & audit layer', () => {
     });
     assert.equal(res.ok, true);
 
-    const after = h.vault.publicView(txId)!;
+    const after = (await h.vault.publicView(txId))!;
     assert.equal(after.settlementStatus, 'settled');
     assert.equal(after.settlementTx, '0x' + 'ab'.repeat(32));
     assert.equal(after.escrowTx, '0x' + 'cd'.repeat(32));
@@ -268,7 +268,7 @@ describe('VEIL privacy & audit layer', () => {
     assert.equal(after.encrypted, true);
 
     // Unknown tx is refused.
-    const missing = h.vault.attachSettlement('tx-9999', { settlementStatus: 'settled' });
+    const missing = await h.vault.attachSettlement('tx-9999', { settlementStatus: 'settled' });
     assert.equal(missing.ok, false);
   });
 });

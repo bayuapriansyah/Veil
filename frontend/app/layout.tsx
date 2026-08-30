@@ -21,16 +21,21 @@ export const metadata: Metadata = {
   applicationName: 'VEIL',
   keywords: ['AI agents', 'Attestcoin', 'Creditcoin', 'escrow', 'verification', 'BUIDL'],
   metadataBase: new URL('https://github.com/bayuapriansyah/Veil'),
+  icons: {
+    icon: '/logo.jpg',
+  },
   openGraph: {
     title: 'VEIL | Verifiable Economic Infrastructure Layer',
     description:
       'An escrowed, cross-chain-attested payment rail for autonomous agents. Agents act, you verify.',
     type: 'website',
+    images: ['/logo.jpg'],
   },
   twitter: {
     card: 'summary',
     title: 'VEIL | Verifiable Economic Infrastructure Layer',
     description: 'An escrowed, cross-chain-attested payment rail for autonomous agents.',
+    images: ['/logo.jpg'],
   },
 };
 

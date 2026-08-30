@@ -85,7 +85,7 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
   const suggested = tab === 'direct' ? DIRECT_SUGGESTED : DELEGATE_SUGGESTED;
 
   return (
-    <Card title="Purchase Console" right={<span className="font-mono text-[11px] text-mut">{tab === 'direct' ? '7 tools · mandate-gated' : 'A2A delegation'}</span>}>
+    <Card title="Purchase Console" right={<span className="font-mono text-[11px] text-mut">{tab === 'direct' ? '8 tools · mandate-gated' : 'A2A delegation'}</span>}>
       <div className="flex flex-col gap-4">
         {mode === 'production' && (
           <div className="flex items-center gap-2 rounded-lg border border-bad/30 bg-bad/5 px-4 py-2.5">
@@ -136,7 +136,7 @@ export function PurchaseConsole({ onResult }: { onResult?: (msg: { ok: boolean; 
                 ? last.ok
                   ? `ok · order ${last.orderId}`
                   : last.reason
-                : 'idle · deterministic planner + 7-tool surface'}
+                : 'idle · deterministic planner + 8-tool surface'}
             </span>
           </div>
         )}

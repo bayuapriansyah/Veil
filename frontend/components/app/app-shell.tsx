@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
@@ -89,8 +90,8 @@ function SidebarBody({
         onClick={onNavigate}
         className="flex items-center gap-3 border-b border-line px-6 py-6"
       >
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-ok/50 bg-ok/10 font-mono text-lg font-bold text-ok">
-          V
+        <div className="flex h-10 items-center justify-center overflow-hidden rounded-xl border border-ok/50 bg-ok/10">
+          <Image src="/logo.jpg" alt="VEIL" width={80} height={40} className="h-full w-auto object-contain" />
         </div>
         <div>
           <div className="font-mono text-sm font-semibold tracking-[0.2em] text-ink">VEIL</div>
@@ -237,8 +238,9 @@ export function AppShell({ children }: { children: React.ReactNode }): React.Rea
             >
               <List size={18} weight="bold" />
             </button>
-            <Link href="/" className="shrink-0 transition-colors hover:text-ink">
-              VEIL
+            <Link href="/" className="flex shrink-0 items-center gap-2 transition-colors hover:text-ink">
+              <Image src="/logo.jpg" alt="VEIL" width={80} height={24} className="h-6 w-auto object-contain" />
+              <span className="hidden sm:inline">VEIL</span>
             </Link>
             <CaretRight size={13} weight="bold" className="shrink-0" />
             <span className="truncate text-ink">{current?.label ?? 'Console'}</span>
@@ -252,11 +254,11 @@ export function AppShell({ children }: { children: React.ReactNode }): React.Rea
               {s.killSwitch ? 'KILL SWITCHED' : s.agent.status === 'active' ? 'OPERATIONAL' : s.agent.status.toUpperCase()}
             </span>
             <div
-              className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
-                s.killSwitch ? 'bg-bad/15 text-bad' : 'bg-ok/15 text-ok'
+              className={`flex h-9 items-center justify-center overflow-hidden rounded-lg transition-colors ${
+                s.killSwitch ? 'bg-bad/15' : 'bg-ok/15'
               }`}
             >
-              V
+              <Image src="/logo.jpg" alt="VEIL" width={60} height={36} className="h-full w-auto object-contain" />
             </div>
           </div>
         </header>

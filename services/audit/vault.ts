@@ -1,19 +1,3 @@
-/**
- * AuditVault — VEIL's privacy + audit authority.
- *
- * Responsibilities:
- *  - Store each transaction's PUBLIC facts and a binding COMMITMENT.
- *  - Seal the SENSITIVE metadata (agent, provider, amount, authorization,
- *    payment/fulfillment/attestation/settlement evidence) with AES-256-GCM at
- *    rest. No version of the stored record contains plaintext of those fields.
- *  - Keep the auditor registry (authorize / revoke). The vault decides whether
- *    a given auditor may see a given transaction ("selective disclosure").
- *  - Produce auditor views (full or field-subset) and the EVIDENCE BUNDLE.
- *  - Replay-guard auditor nonces.
- *
- * Boundary: the vault protects VEIL data at rest and controls WHO may see it.
- * It does not make Attestcoin private — attestation verifies cross-chain facts.
- */
 import { randomBytes } from 'node:crypto';
 import { keccak256, solidityPackedKeccak256, toUtf8Bytes } from 'ethers';
 
@@ -27,10 +11,11 @@ import {
   TransactionInput,
   TransactionRecord,
 } from './types';
+import { VaultBackend } from './vault-interface';
 
 const PUBLIC_FIELDS = ['txId', 'commitment', 'verificationStatus', 'policyStatus', 'settlementStatus', 'createdAt'] as const;
 
-export class AuditVault {
+export class AuditVault implements VaultBackend {
   private transactions = new Map<string, TransactionRecord>();
   private auditors = new Map<string, AuditorAccount>();
   private usedNonces = new Set<string>();
@@ -42,9 +27,7 @@ export class AuditVault {
     this.keySource = keySource;
   }
 
-  // --- recording ---------------------------------------------------------- //
-
-recordTransaction(input: TransactionInput): { record: TransactionRecord; view: PublicTxView } {
+  async recordTransaction(input: TransactionInput): Promise<{ record: TransactionRecord; view: PublicTxView }> {
     const createdAt = input.createdAt ?? Math.floor(Date.now() / 1000);
     const txId = input.txId ?? deriveTxId(input.commitment ?? defaultTxId());
     const commitmentSource =
@@ -57,7 +40,6 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     const plaintext = JSON.stringify(input.protectedData);
     const box = seal(this.masterKey, txId, plaintext);
     const ct = Buffer.from(box.ct, 'base64');
-    // The commitment binds the public facts AND the sealed ciphertext.
     const commitment = solidityPackedKeccak256(
       ['bytes32', 'bytes', 'bytes32'],
       [keccak256(ct), ct, commitmentSource],
@@ -79,12 +61,7 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     return { record, view: publicView(record) };
   }
 
-  /**
-   * Attach the live attestation fact to a stored record once the worker has
-   * proven the source-chain tx on Creditcoin. Public-only update (tx hashes are
-   * public chain data) — the sealed ciphertext and its commitment stay stable.
-   */
-  attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): { ok: boolean; error?: string } {
+  async attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): Promise<{ ok: boolean; error?: string }> {
     const rec = this.transactions.get(txId);
     if (!rec) return { ok: false, error: 'TransactionNotKnown' };
     rec.attestationStatus = opts.attestationStatus;
@@ -93,12 +70,7 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     return { ok: true };
   }
 
-  /**
-   * Attach the live on-chain settlement fact once the worker has settled the
-   * order on Creditcoin (SettlementEngine.settle). Public-only update — the
-   * sealed ciphertext and its commitment stay stable.
-   */
-  attachSettlement(txId: string, opts: { settlementStatus?: string; settlementTx?: string; escrowTx?: string; mandateId?: string }): { ok: boolean; error?: string } {
+  async attachSettlement(txId: string, opts: { settlementStatus?: string; settlementTx?: string; escrowTx?: string; mandateId?: string }): Promise<{ ok: boolean; error?: string }> {
     const rec = this.transactions.get(txId);
     if (!rec) return { ok: false, error: 'TransactionNotKnown' };
     if (opts.settlementStatus) rec.settlementStatus = opts.settlementStatus;
@@ -108,17 +80,15 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     return { ok: true };
   }
 
-  // --- public (never decrypts) -------------------------------------------- //
-
-  get(txId: string): TransactionRecord | undefined {
+  async get(txId: string): Promise<TransactionRecord | undefined> {
     return this.transactions.get(txId);
   }
 
-  list(): PublicTxView[] {
+  async list(): Promise<PublicTxView[]> {
     return [...this.transactions.values()].map(publicView);
   }
 
-  publicView(txId: string): PublicTxView | undefined {
+  async publicView(txId: string): Promise<PublicTxView | undefined> {
     const rec = this.transactions.get(txId);
     return rec ? publicView(rec) : undefined;
   }
@@ -127,14 +97,11 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     return this.keySource;
   }
 
-  get txCount(): number {
+  async txCount(): Promise<number> {
     return this.transactions.size;
   }
 
-  // --- auditor registry --------------------------------------------------- //
-
-  /** Grant an auditor access (scope 'all' or a txId allow-list). */
-  authorize(auditor: string, opts: { scope?: 'all' | string[] } = {}): AuditorAccount {
+  async authorize(auditor: string, opts: { scope?: 'all' | string[] } = {}): Promise<AuditorAccount> {
     const key = auditor.toLowerCase();
     const existing = this.auditors.get(key);
     const account: AuditorAccount = existing
@@ -149,7 +116,7 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     return account;
   }
 
-  revoke(auditor: string): AuditorAccount | undefined {
+  async revoke(auditor: string): Promise<AuditorAccount | undefined> {
     const key = auditor.toLowerCase();
     const account = this.auditors.get(key);
     if (!account) return undefined;
@@ -158,38 +125,33 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     return { ...account };
   }
 
-  auditorOf(auditor: string): AuditorAccount | undefined {
+  async auditorOf(auditor: string): Promise<AuditorAccount | undefined> {
     return this.auditors.get(auditor.toLowerCase());
   }
 
-  /** The vault's authorization decision: authorized, not revoked, in scope. */
-  isAuthorized(auditor: string, txId?: string): boolean {
+  async auditorsList(): Promise<AuditorAccount[]> {
+    return [...this.auditors.values()];
+  }
+
+  async isAuthorized(auditor: string, txId?: string): Promise<boolean> {
     const account = this.auditors.get(auditor.toLowerCase());
     if (!account || !account.authorized || account.revokedAt !== undefined) return false;
     if (account.scope === 'all') return true;
     return txId !== undefined && account.scope.includes(txId);
   }
 
-  /** Consume an auditor nonce — returns false on replay. */
-  useNonce(auditor: string, nonce: string): boolean {
+  async useNonce(auditor: string, nonce: string): Promise<boolean> {
     const key = `${auditor.toLowerCase()}:${nonce}`;
     if (this.usedNonces.has(key)) return false;
     this.usedNonces.add(key);
     return true;
   }
 
-  // --- auditor views ------------------------------------------------------ //
-
-  /**
-   * Selective disclosure. Returns ONLY the requested fields (or the whole
-   * protected payload). The vault re-checks authorization — the server's
-   * ECRECOVER pass is authentication; authority lives here.
-   */
-  disclose(txId: string, auditor: string, opts: DisclosureOptions = {}): ProtectedData | undefined {
+  async disclose(txId: string, auditor: string, opts: DisclosureOptions = {}): Promise<ProtectedData | undefined> {
     const rec = this.transactions.get(txId);
     if (!rec) return undefined;
-    if (!this.isAuthorized(auditor, txId)) return undefined;
-    const plaintext = openSealedBox(this.masterKey, txId, rec.protected); // throws on tamper
+    if (!(await this.isAuthorized(auditor, txId))) return undefined;
+    const plaintext = openSealedBox(this.masterKey, txId, rec.protected);
     const data = JSON.parse(plaintext) as ProtectedData;
     const fields = opts.fields?.filter((f) => f.trim().length > 0);
     if (fields && fields.length > 0) {
@@ -203,9 +165,8 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
     return data;
   }
 
-  /** The evidence bundle (payment/fulfillment/attestation/settlement). */
-  evidenceBundle(txId: string, auditor: string): EvidenceBundle | undefined {
-    const found = this.disclose(txId, auditor);
+  async evidenceBundle(txId: string, auditor: string): Promise<EvidenceBundle | undefined> {
+    const found = await this.disclose(txId, auditor);
     if (!found) return undefined;
     const bundle: EvidenceBundle = {
       payment: found.paymentEvidence,
@@ -217,7 +178,7 @@ recordTransaction(input: TransactionInput): { record: TransactionRecord; view: P
   }
 }
 
-function publicView(rec: TransactionRecord): PublicTxView {
+export function publicView(rec: TransactionRecord): PublicTxView {
   return {
     txId: rec.txId,
     commitment: rec.commitment,

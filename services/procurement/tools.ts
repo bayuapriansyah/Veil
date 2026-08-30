@@ -1,8 +1,8 @@
 /**
- * The agent's tool surface — EXACTLY 7 tools and nothing more.
+ * The agent's tool surface — EXACTLY 8 tools and nothing more.
  *
- *   read-only (5): searchProviders, getProviderDetails, checkMandate,
- *                  checkBudget, checkReputation
+ *   read-only (6): searchProviders, getProviderDetails, checkProviderSecurity,
+ *                  checkMandate, checkBudget, checkReputation
  *   state-changing (2): requestService -> makePayment  (the ONLY payment path)
  *
  * There is deliberately NO privileged tool: the agent cannot increase budgets,
@@ -14,6 +14,7 @@
  */
 import { atomsOf, ProcurementShop } from './shop';
 import { TOOL_NAMES, PRIVILEGED_RESERVED, PurchaseOffer, ToolName } from './types';
+import { scanProvider, SecurityScanResult } from '../security/scanner';
 
 /** Raised when a task or tool call is outside what the agent is allowed to do. */
 export class ProcurementPolicyError extends Error {}
@@ -89,6 +90,31 @@ export function createAgentTools(shop: ProcurementShop): Map<ToolName, AgentTool
         data: {
           ...profile,
           services: profile.services.map((s) => ({ ...s, pricePerCallAtoms: s.pricePerCallAtoms.toString() })),
+        },
+      };
+    },
+  });
+
+  tools.set('checkProviderSecurity', {
+    name: 'checkProviderSecurity',
+    description: 'Scan provider bytecode for dangerous opcodes (SELFDESTRUCT, DELEGATECALL, etc.) and compute a risk score 0-100.',
+    run: async (args) => {
+      const provider = required(args.provider, 'provider');
+      const bytecodeOverride = args.bytecodeOverride ? String(args.bytecodeOverride) : undefined;
+      const result: SecurityScanResult = await scanProvider(provider, undefined, bytecodeOverride);
+      if (!result.ok) {
+        return { ok: false, error: result.error ?? 'security scan failed' };
+      }
+      return {
+        ok: true,
+        data: {
+          provider: result.provider,
+          bytecodeHash: result.bytecodeHash,
+          bytecodeLength: result.bytecodeLength,
+          riskScore: result.riskScore,
+          passedThreshold: result.passedThreshold,
+          opcodes: result.opcodes,
+          txHash: result.txHash,
         },
       };
     },

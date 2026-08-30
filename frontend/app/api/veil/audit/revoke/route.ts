@@ -11,7 +11,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const body = (await req.json().catch(() => ({}))) as { auditor?: string };
     if (!body.auditor) return NextResponse.json({ ok: false, error: 'auditor is required' }, { status: 400 });
     const rt = await getRuntime();
-    const acct = rt.revoke(body.auditor);
+    const acct = await rt.revoke(body.auditor);
     if (!acct) return NextResponse.json({ ok: false, error: 'AuditorNotKnown' }, { status: 404 });
     return NextResponse.json({ ok: true, auditor: acct });
   } catch (e) {

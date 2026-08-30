@@ -12,6 +12,8 @@
  * not happen. The UI labels attestation state as "mirror".
  */
 import { AuditVault } from '../../services/audit/vault';
+import { VaultBackend } from '../../services/audit/vault-interface';
+import { SupabaseVault } from '../../services/audit/supabase-vault';
 import { loadVaultKey } from '../../services/audit/crypto';
 import { signAuditAccess, verifyAuditAccess } from '../../services/audit/signer';
 import { Wallet, keccak256, toUtf8Bytes } from 'ethers';
@@ -104,7 +106,7 @@ const SERVICE_LABELS: Record<string, string> = {
 class VeilRuntime {
   shop!: Awaited<ReturnType<typeof createProcurementShop>>['shop'];
   agent!: ProcurementAgent;
-  vault!: AuditVault;
+  vault!: VaultBackend;
   killSwitch = false;
   orders: RuntimeOrder[] = [];
   auditorKey = '0x' + 'aa'.repeat(32); // demo auditor wallet (runtime-side, not shipped as a secret)
@@ -129,15 +131,25 @@ class VeilRuntime {
     this.providerAddress = process.env.VEIL_PROVIDER_ADDRESS && /^0x[0-9a-fA-F]{40}$/.test(process.env.VEIL_PROVIDER_ADDRESS)
       ? process.env.VEIL_PROVIDER_ADDRESS
       : PROVIDER;
+    
+    let seedOverride = 603_000n;
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const c = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+        const { data } = await c.from('vault_transactions').select('tx_id').order('tx_id', { ascending: false }).limit(1);
+        if (data?.[0]?.tx_id?.startsWith('veil-')) {
+          const lastId = BigInt(data[0].tx_id.replace('veil-', ''));
+          seedOverride = lastId + 1n;
+        }
+      } catch { /* fallback */ }
+    }
+    
     const { shop, close } = await createProcurementShop({
       operator: OPERATOR,
       agentPrivateKey: agentWallet.privateKey,
       agentAddress: agentWallet.address,
-      // Start auto-assigned order ids high so restarts never collide with
-      // already-recorded on-chain AgentPayment events (soft-fail avoided).
-      // 600000 was already recorded + proven on Creditcoin; the next live
-      // settlement run uses 601000+. Agent-to-agent reserves 700_000n+.
-      orderIdSeed: 603_000n,
+      orderIdSeed: seedOverride,
       providers: [
         // Provider[0] is the ON-CHAIN provider: in production its address comes
         // from VEIL_PROVIDER_ADDRESS and its key from SOURCE_CHAIN_PROVIDER_PRIVATE_KEY,
@@ -154,14 +166,13 @@ class VeilRuntime {
       owner: OPERATOR,
     });
     this.shop = shop;
-    this.agent = new ProcurementAgent({ shop, forceDeterministic: true }); // deterministic unless env key permits LLM
+    this.agent = new ProcurementAgent({ shop, forceDeterministic: true });
     const { key, source } = loadVaultKey();
-    this.vault = new AuditVault(key, source);
+    this.vault = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY
+      ? new SupabaseVault(key, source)
+      : new AuditVault(key, source);
     this.keySource = source;
-    // Authorize the runtime-owned demo auditor ONCE, with an explicit scope.
-    // This is the demo's standing grant — the vault decides disclosures from
-    // here on; this is NOT re-granted per disclosure (see discloseAuditor).
-    this.vault.authorize(this.auditorAddress, { scope: 'all' });
+    await this.vault.authorize(this.auditorAddress, { scope: 'all' });
     void close;
   }
 
@@ -222,7 +233,7 @@ class VeilRuntime {
     this.orders.unshift(order);
 
     // Record into the audit vault (encrypted at rest; public view only).
-    this.recordAudit(order, outcome);
+    await this.recordAudit(order, outcome);
     return { ok: true, orderId: outcome.orderId, onchainRecordTxHash: order.onchainRecordTxHash, fulfillmentTxHash: order.fulfillmentTxHash };
   }
 
@@ -269,7 +280,7 @@ class VeilRuntime {
     // Record delegation in the vault
     const now = Date.now();
     const aToBPaymentTx = aToBPayment.ok && 'txHash' in aToBPayment ? aToBPayment.txHash : undefined;
-    this.vault.recordTransaction({
+    await this.vault.recordTransaction({
       txId: `veil-a2b-${aToBOrderId}`,
       verificationStatus: delegation.bToCPaymentTx ? 'payment-verified fulfillment-verified' : 'delegation-pending',
       policyStatus: 'mandate-valid budget-compliant',
@@ -318,7 +329,7 @@ class VeilRuntime {
     return { ok: true, orderId: String(aToBOrderId), delegation };
   }
 
-  private recordAudit(order: RuntimeOrder, outcome: Awaited<ReturnType<ProcurementAgent['run']>>): void {
+  private async recordAudit(order: RuntimeOrder, outcome: Awaited<ReturnType<ProcurementAgent['run']>>): Promise<void> {
     const onchain = order.onchainRecordTxHash;
     const attestationEvidence = onchain
       ? {
@@ -335,7 +346,7 @@ class VeilRuntime {
         note: 'no live on-chain record (soft-fail) — attestation state mirrored in the SettlementLedger for this demo',
         recordedAt: order.createdAt + 2,
       };
-    this.vault.recordTransaction({
+    await this.vault.recordTransaction({
       txId: `veil-${order.orderId}`,
       verificationStatus: 'payment-verified fulfillment-verified',
       policyStatus: 'mandate-valid budget-compliant',
@@ -362,14 +373,13 @@ class VeilRuntime {
   }
 
   /** Record the live attestation fact once the worker proves it on Creditcoin. */
-  attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): { ok: boolean; error?: string } {
-    void this.start();
+  async attachAttestation(txId: string, opts: { attestationStatus: 'proving' | 'verified'; attestationTx?: string; sourceTx?: string }): Promise<{ ok: boolean; error?: string }> {
+    await this.start();
     return this.vault.attachAttestation(txId, opts);
   }
 
-  /** Record the live on-chain settlement fact once the worker settles on Creditcoin. */
-  attachSettlement(txId: string, opts: { settlementStatus?: string; settlementTx?: string; escrowTx?: string; mandateId?: string }): { ok: boolean; error?: string } {
-    void this.start();
+  async attachSettlement(txId: string, opts: { settlementStatus?: string; settlementTx?: string; escrowTx?: string; mandateId?: string }): Promise<{ ok: boolean; error?: string }> {
+    await this.start();
     return this.vault.attachSettlement(txId, opts);
   }
 
@@ -489,44 +499,41 @@ class VeilRuntime {
 
   // --- audit API (real vault + signed auditor flow) ---------------------- //
 
-  auditTxs(): Array<{ txId: string; commitment: string; verificationStatus: string; policyStatus: string; settlementStatus: string; createdAt: number; encrypted: boolean }> {
-    void this.start();
+  async auditTxs(): Promise<Array<{ txId: string; commitment: string; verificationStatus: string; policyStatus: string; settlementStatus: string; createdAt: number; encrypted: boolean }>> {
+    await this.start();
     return this.vault.list();
   }
 
-  auditors(): AuditorPublic[] {
-    void this.start();
-    const registry = (this.vault as unknown as { auditors: Map<string, AuditorPublic> }).auditors;
-    return [...registry.values()];
+  async auditors(): Promise<AuditorPublic[]> {
+    await this.start();
+    const auditorsList = await this.vault.auditorsList();
+    return auditorsList.map(a => ({ auditor: a.auditor, authorized: a.authorized, revokedAt: a.revokedAt }));
   }
 
-  authorize(auditor: string, scope?: 'all' | string[]): AuditorPublic {
-    void this.start();
-    const acct = this.vault.authorize(auditor, { scope });
+  async authorize(auditor: string, scope?: 'all' | string[]): Promise<AuditorPublic> {
+    await this.start();
+    const acct = await this.vault.authorize(auditor, { scope });
     return { auditor: acct.auditor, authorized: acct.authorized };
   }
 
-  revoke(auditor: string): AuditorPublic | undefined {
-    void this.start();
-    const acct = this.vault.revoke(auditor);
+  async revoke(auditor: string): Promise<AuditorPublic | undefined> {
+    await this.start();
+    const acct = await this.vault.revoke(auditor);
     return acct ? { auditor: acct.auditor, authorized: acct.authorized, revokedAt: acct.revokedAt } : undefined;
   }
 
-  /** Selective disclosure performed through the real EIP-712 AuditAccess flow. */
-  discloseAuditor(txId: string, fields?: string[]): { ok: boolean; data?: unknown; error?: string } {
-    void this.start();
-    // NOTE: the demo auditor was authorized once in start(); no re-authorization
-    // happens here. Authorization is an operator action, not a disclosure action.
+  async discloseAuditor(txId: string, fields?: string[]): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+    await this.start();
     const signingResource = `/api/veil/audit/tx/${txId}`;
     const access = signAuditAccess({ privateKey: this.auditorKey, resource: signingResource, txId });
-    const verified = verifyAuditAccess(access, {
+    const verified = await verifyAuditAccess(access, {
       expectedResource: signingResource,
       expectedTxId: txId,
-      isAuthorized: (a) => this.vault.isAuthorized(a, txId),
+      isAuthorized: async (a: string) => this.vault.isAuthorized(a, txId),
     });
     if (!verified.ok || !verified.auditor) return { ok: false, error: verified.error };
-    if (!this.vault.useNonce(verified.auditor, access.nonce)) return { ok: false, error: 'nonce replay detected' };
-    const result = this.vault.disclose(txId, verified.auditor, { fields });
+    if (!await this.vault.useNonce(verified.auditor, access.nonce)) return { ok: false, error: 'nonce replay detected' };
+    const result = await this.vault.disclose(txId, verified.auditor, { fields });
     return result ? { ok: true, data: result } : { ok: false, error: 'TransactionNotKnown' };
   }
 
@@ -535,18 +542,17 @@ class VeilRuntime {
   }
   private _auditorAddress = '';
 
-  /** Unauthorized-auditor demo: a key the vault never authorized must be refused. */
-  attemptUnauthorized(txId: string): { ok: boolean; data?: unknown; error?: string } {
-    void this.start();
+  async attemptUnauthorized(txId: string): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+    await this.start();
     const signingResource = `/api/veil/audit/tx/${txId}`;
     const access = signAuditAccess({ privateKey: '0x' + 'bb'.repeat(32), resource: signingResource, txId });
-    const verified = verifyAuditAccess(access, {
+    const verified = await verifyAuditAccess(access, {
       expectedResource: signingResource,
       expectedTxId: txId,
-      isAuthorized: (a) => this.vault.isAuthorized(a, txId),
+      isAuthorized: async (a: string) => this.vault.isAuthorized(a, txId),
     });
     if (!verified.ok) return { ok: false, error: verified.error };
-    return { ok: true, data: null }; // unreachable while the vault refuses unknown auditors
+    return { ok: true, data: null };
   }
 
   protections(): void {}
@@ -593,9 +599,7 @@ function orderAmountOf(outcome: Awaited<ReturnType<ProcurementAgent['run']>>, sh
 
 /** Live source-chain AgentPayment tx hash from the makePayment tool result, if recorded. */
 function onchainTxHashOf(outcome: Awaited<ReturnType<ProcurementAgent['run']>>): string | undefined {
-  // The deterministic plan records results keyed by STEP INDEX (makePayment = 8),
-  // but accept the tool-name key defensively too.
-  const rec = outcome.results[8] ?? (outcome.results as Record<string, unknown>)['makePayment'];
+  const rec = outcome.results[9] ?? (outcome.results as Record<string, unknown>)['makePayment'];
   const data = (rec as { data?: { onchain?: { txHash?: string } } } | undefined)?.data;
   return data?.onchain?.txHash;
 }

@@ -41,11 +41,28 @@ contract VeilSource is Ownable, ReentrancyGuard {
         bytes32 transactionRef
     );
 
+    // event SecurityScanRecorded(
+    //     address indexed provider,
+    //     bytes32 indexed bytecodeHash,
+    //     uint8 riskScore,            // data
+    //     bool passedThreshold,       // data
+    //     address scanner);           // data
+    event SecurityScanRecorded(
+        address indexed provider,
+        bytes32 indexed bytecodeHash,
+        uint8 riskScore,
+        bool passedThreshold,
+        address scanner
+    );
+
     // ------------------------------------------------------------------ //
     //  State (minimal by design)                                          //
     // ------------------------------------------------------------------ //
     mapping(uint256 => address) public orderPaidBy;
     mapping(uint256 => address) public orderProvider;
+    mapping(address => bytes32) public providerBytecodeHash;
+    mapping(address => uint8) public providerRiskScore;
+    mapping(address => bool) public providerScanPassed;
 
     error NotFound();
     error OrderAlreadyPaid();
@@ -53,6 +70,7 @@ contract VeilSource is Ownable, ReentrancyGuard {
     error InvalidAmount();
     error InvalidAddress();
     error NotProvider();
+    error InvalidRiskScore();
 
     constructor() Ownable(msg.sender) {}
 
@@ -97,6 +115,28 @@ contract VeilSource is Ownable, ReentrancyGuard {
         if (orderProvider[orderId] != msg.sender) revert NotProvider();
 
         emit FulfillmentReceipt(orderId, msg.sender, resultHash, serviceId, transactionRef);
+    }
+
+    /// @notice Records a provider bytecode security scan result and emits the
+    ///         SecurityScanRecorded event that Attestcoin will prove on Creditcoin.
+    /// @param provider Address of the provider whose bytecode was scanned.
+    /// @param bytecodeHash keccak256 hash of the provider's deployed bytecode.
+    /// @param riskScore Heuristic risk score (0-100). Higher = more dangerous.
+    /// @param passedThreshold Whether the scan passed the safety threshold.
+    function recordProviderSecurityScan(
+        address provider,
+        bytes32 bytecodeHash,
+        uint8 riskScore,
+        bool passedThreshold
+    ) external {
+        if (provider == address(0)) revert InvalidAddress();
+        if (riskScore > 100) revert InvalidRiskScore();
+
+        providerBytecodeHash[provider] = bytecodeHash;
+        providerRiskScore[provider] = riskScore;
+        providerScanPassed[provider] = passedThreshold;
+
+        emit SecurityScanRecorded(provider, bytecodeHash, riskScore, passedThreshold, msg.sender);
     }
 
     /// @notice Whether an order has been paid (per this source contract).

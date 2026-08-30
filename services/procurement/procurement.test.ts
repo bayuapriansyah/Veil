@@ -10,6 +10,8 @@
  *                           only the operator settles
  *   6. privilege guard    — the agent has no settlement/mandate/privilege tools
  *   7. deterministic fallback — LLM attempt fails soft -> deterministic works
+ *   8. security safe      — clean provider passes security check, purchase completes
+ *   9. security blocked   — dangerous provider rejected, agent halts before payment
  *
  * Order ids are deterministic (first reservation is 1189) so `requestService`
  * and ledger state stay easy to assert.
@@ -78,7 +80,7 @@ describe('VEIL procurement agent', () => {
       const out = await h.agent.run('purchase market data for ETH/USD');
       assert.equal(out.ok, true, JSON.stringify(out.error ?? out));
       assert.equal(out.planner, 'deterministic');
-      assert.equal(out.plan.steps.length, 9);
+      assert.equal(out.plan.steps.length, 10);
       assert.equal(out.orderId, '1189'); // deterministic seed: first reserved order
       assert.equal(out.serviceId, SERVICE_MARKET_DATA);
       assert.equal(out.provider, PROVIDER);
@@ -217,6 +219,66 @@ describe('VEIL procurement agent', () => {
     } finally {
       if (prev === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = prev;
+    }
+  });
+
+  it('8. security safe — clean provider passes security check, purchase completes', async () => {
+    const prev = process.env.VEIL_MODE;
+    process.env.VEIL_MODE = 'demo';
+    try {
+      const h = await createHarness();
+      try {
+        const out = await h.agent.run('purchase market data');
+        assert.equal(out.ok, true, JSON.stringify(out.error ?? out));
+        assert.equal(out.planner, 'deterministic');
+        // 10-step plan now includes checkProviderSecurity as step 3
+        assert.equal(out.plan.steps.length, 10);
+        const secStep = out.plan.steps.find((s) => s.tool === 'checkProviderSecurity');
+        assert.ok(secStep, 'plan should include checkProviderSecurity');
+        // In demo mode, security scan returns safe (riskScore 0)
+        const secRec = out.results[secStep!.index];
+        assert.ok(secRec, 'checkProviderSecurity should have run');
+        assert.equal(secRec!.ok, true);
+        // Purchase completed successfully
+        assert.equal(out.orderId, '1189');
+        assert.equal(out.paymentVerified, true);
+      } finally {
+        await h.close();
+      }
+    } finally {
+      if (prev === undefined) delete process.env.VEIL_MODE;
+      else process.env.VEIL_MODE = prev;
+    }
+  });
+
+  it('9. security blocked — dangerous provider rejected, agent halts before payment', async () => {
+    const prev = process.env.VEIL_MODE;
+    process.env.VEIL_MODE = 'production';
+    // Set a fake RPC URL so the scanner tries to fetch (but will fail for in-memory providers)
+    const prevRpc = process.env.SOURCE_CHAIN_RPC_URL;
+    process.env.SOURCE_CHAIN_RPC_URL = 'http://127.0.0.1:19999'; // unreachable
+    try {
+      const h = await createHarness();
+      try {
+        // Manually run the security check tool with a dangerous bytecode override
+        const scanResult = await h.agent.runTool('checkProviderSecurity', {
+          provider: PROVIDER,
+          bytecodeOverride: '0x6042fff4', // PUSH1 0x42 + SELFDESTRUCT + DELEGATECALL
+        });
+        assert.equal(scanResult.ok, true, JSON.stringify(scanResult.error));
+        const data = scanResult.data as { riskScore: number; passedThreshold: boolean; opcodes: Array<{ opcode: string }> };
+        assert.ok(data.riskScore >= 70, `expected riskScore >= 70, got ${data.riskScore}`);
+        assert.equal(data.passedThreshold, false);
+        assert.ok(data.opcodes.some((o) => o.opcode === 'SELFDESTRUCT'));
+        assert.ok(data.opcodes.some((o) => o.opcode === 'DELEGATECALL'));
+      } finally {
+        await h.close();
+      }
+    } finally {
+      if (prev === undefined) delete process.env.VEIL_MODE;
+      else process.env.VEIL_MODE = prev;
+      if (prevRpc === undefined) delete process.env.SOURCE_CHAIN_RPC_URL;
+      else process.env.SOURCE_CHAIN_RPC_URL = prevRpc;
     }
   });
 });

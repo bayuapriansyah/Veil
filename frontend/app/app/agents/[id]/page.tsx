@@ -26,6 +26,7 @@ const EMPTY_STATE: VeilState = {
 const TOOLS = [
   ['searchProviders', 'discovery · reputation ≥ 3 only'],
   ['getProviderDetails', 'profile read'],
+  ['checkProviderSecurity', 'bytecode safety scan · risk 0–100'],
   ['checkMandate', 'mandate coverage read'],
   ['checkBudget', 'remaining-budget read'],
   ['checkReputation', 'ledger score read'],
@@ -42,7 +43,7 @@ export default function AgentPage(): React.ReactElement {
     <div>
       <PageHeader
         title="Agent Cockpit"
-        sub="Direct the procurement agent. It plans with a 7-tool surface and the SettlementLedger stays the authority on what may be paid. The agent holds no privileged tools."
+        sub="Direct the procurement agent. It plans with an 8-tool surface and the SettlementLedger stays the authority on what may be paid. The agent holds no privileged tools."
         right={
           <StatusChip
             status={s.agent.status === 'active' ? 'VERIFIED' : 'REJECTED'}
@@ -81,7 +82,7 @@ export default function AgentPage(): React.ReactElement {
               </div>
               <div>
                 <div className="text-xs uppercase tracking-wider text-mut">Planner</div>
-                <div className="mt-1 font-mono text-ink">deterministic 9-step</div>
+                <div className="mt-1 font-mono text-ink">deterministic 10-step</div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-wider text-mut">Rail</div>
@@ -90,13 +91,13 @@ export default function AgentPage(): React.ReactElement {
             </div>
           </Card>
 
-          <Card title="Tool surface" right={<span className="font-mono text-[11px] text-mut">exactly 7</span>}>
+          <Card title="Tool surface" right={<span className="font-mono text-[11px] text-mut">exactly 8</span>}>
             <ul className="space-y-2">
               {TOOLS.map(([name, note], i) => (
                 <li
                   key={name}
                   className={`flex items-center justify-between rounded-lg border px-3 py-2 text-[13px] ${
-                    i >= 5 ? 'border-ok/30 bg-ok/5 text-ok' : 'border-line bg-panel2/60 text-mut'
+                    i >= 6 ? 'border-ok/30 bg-ok/5 text-ok' : 'border-line bg-panel2/60 text-mut'
                   }`}
                 >
                   <span className="font-mono">{name}</span>

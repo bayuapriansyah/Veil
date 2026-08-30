@@ -19,12 +19,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ ok: false, error: 'txId and attestationStatus are required' }, { status: 400 });
     }
     const rt = await getRuntime();
-    const res = rt.attachAttestation(body.txId, { attestationStatus: body.attestationStatus, attestationTx: body.attestationTx, sourceTx: body.sourceTx });
+    const res = await rt.attachAttestation(body.txId, { attestationStatus: body.attestationStatus, attestationTx: body.attestationTx, sourceTx: body.sourceTx });
     if (!res.ok) {
       return NextResponse.json({ ok: false, error: res.error }, { status: 404 });
     }
     if (body.settlement && body.settlement.status === 'settled') {
-      const s = rt.attachSettlement(body.txId, {
+      const s = await rt.attachSettlement(body.txId, {
         settlementStatus: 'settled',
         settlementTx: body.settlement.txHash,
         escrowTx: body.settlement.escrowTxHash,

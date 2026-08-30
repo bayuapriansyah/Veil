@@ -9,7 +9,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const body = (await req.json().catch(() => ({}))) as { txId?: string };
     if (!body.txId) return NextResponse.json({ ok: false, error: 'txId is required' }, { status: 400 });
     const rt = await getRuntime();
-    const result = rt.attemptUnauthorized(body.txId);
+    const result = await rt.attemptUnauthorized(body.txId);
     return NextResponse.json({ ok: result.ok, disclosure: result.data, error: result.error });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });

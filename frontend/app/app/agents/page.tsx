@@ -73,7 +73,7 @@ export default function AgentsPage(): React.ReactElement {
             </div>
             <div>
               <div className="font-mono text-base text-ink">{shortAddress(s.agent.address, 6)}</div>
-              <div className="mt-0.5 text-sm text-mut">deterministic planner · 7 tools</div>
+              <div className="mt-0.5 text-sm text-mut">deterministic planner · 8 tools</div>
             </div>
           </div>
           <Link href={`/app/agents/${s.agent.address}`} className="btn-muted">

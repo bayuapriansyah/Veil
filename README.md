@@ -218,17 +218,18 @@ Detailed diagrams, networking, and per-component behavior live in
 ## AI Agent
 
 The procurement agent (`ProcurementAgent`) is deliberately minimal. It has
-**exactly 7 tools** — 5 read-only and 2 state-changing:
+**exactly 8 tools** — 6 read-only and 2 state-changing:
 
 | # | Tool | Kind |
 |---|------|------|
 | 1 | `searchProviders(serviceId)` | read-only — providers offering the service with reputation ≥ 3 |
 | 2 | `getProviderDetails(provider)` | read-only — profile, services, reputation, operator |
-| 3 | `checkMandate(serviceId)` | read-only — active mandate covering the service (ledger mirror) |
-| 4 | `checkBudget(serviceId, amountAtoms)` | read-only — remaining ledger budget ≥ amount |
-| 5 | `checkReputation(provider)` | read-only — star score (1-5; < 3 excluded) |
-| 6 | `requestService(...)` | state-changing — reserve a payment offer (no money moves) |
-| 7 | `makePayment(orderId)` | state-changing — **the only payment path** |
+| 3 | `checkProviderSecurity(provider)` | read-only — bytecode safety scan, risk score 0–100 |
+| 4 | `checkMandate(serviceId)` | read-only — active mandate covering the service (ledger mirror) |
+| 5 | `checkBudget(serviceId, amountAtoms)` | read-only — remaining ledger budget ≥ amount |
+| 6 | `checkReputation(provider)` | read-only — star score (1-5; < 3 excluded) |
+| 7 | `requestService(...)` | state-changing — reserve a payment offer (no money moves) |
+| 8 | `makePayment(orderId)` | state-changing — **the only payment path** |
 
 There is **no** settle / refund / revoke / budget-modify / verify / escrow tool.
 `assertSafeToolName` rejects any unknown or privileged-looking name, including
@@ -236,9 +237,9 @@ LLM-produced ones (see [`docs/AGENT.md`](docs/AGENT.md)).
 
 Planner selection:
 
-- **Default** — a deterministic 9-step plan (`searchProviders → getProviderDetails
-  → checkReputation → checkMandate → checkBudget → requestService → checkBudget →
-  makePayment → checkMandate`). Same plan every run.
+- **Default** — a deterministic 10-step plan (`searchProviders → getProviderDetails
+  → checkProviderSecurity → checkReputation → checkMandate → checkBudget →
+  requestService → checkBudget → makePayment → checkMandate`). Same plan every run.
 - **Optional LLM** — when `OPENAI_API_KEY` is set (and not `sk-none`), one
   OpenAI tool-use call is attempted; output is validated against the same
   7-tool allowlist. On **any** error it soft-fails to the deterministic planner.
@@ -298,6 +299,28 @@ Security guarantees:
   Attestcoin proves; in the demo, `SettlementLedger.markFulfillmentVerified`
   mirrors that state.
 - Settlement refuses (escrow stays `Locked`) until fulfillment exists.
+
+## Provider Security Attestation
+
+- **Bytecode heuristic scanner (local).** Before payment, the agent scans
+  the provider's on-chain bytecode for dangerous opcodes: `SELFDESTRUCT`
+  (0xFF, critical, +40), `DELEGATECALL` (0xF4, high, +30), `CREATE2` (0xF5,
+  medium, +10), `EXTCODECOPY` (0x3C, high, +10), `STATICCALL` (0xFA, medium,
+  +5), and `tx.origin` (0x41, medium, +8). A risk score (0–100) is computed
+  from these weights; providers scoring ≥ 50 are rejected at the gate.
+- **Cross-chain verification via Attestcoin.** The scan result is emitted as a
+  `SecurityScanRecorded` event on `VeilSource`, provable on Creditcoin the same
+  way `AgentPayment` and `FulfillmentReceipt` are. The ASC stores
+  `verifiedRiskScore` and `verifiedPassedThreshold` on-chain (action 2).
+- **Agent integration.** `checkProviderSecurity(provider)` is a read-only tool
+  inserted as step 3 in the deterministic planner, between `getProviderDetails`
+  and `checkReputation`. A failing scan halts the purchase — the agent never
+  pays an unsafe provider.
+- The scanner fetches bytecode via `eth_getCode` on the source chain (Sepolia),
+  computes a `keccak256` hash, and records the result on VeilSource via
+  `recordProviderSecurityScan`. Recording follows the same soft-fail pattern as
+  `recordAgentPayment` — scan results are valid even when on-chain recording
+  fails.
 
 ## Escrow
 
@@ -397,7 +420,7 @@ Full prerequisites, ordering, and verification: [`docs/DEPLOYMENT.md`](docs/DEPL
 
 ## Testing
 
-- **50 tests / 8 suites** (Node), all green:
+- **59 tests / 9 suites** (Node), all green:
   - `services/provider/x402.test.ts` — 8 tests (real x402 `exact`/EIP-3009 crypto,
     sign/ECRECOVER, mismatch/hyper-payment/tamper rejection, time-window
     enforcement, nonce replay guard, amount enforcement).
@@ -405,12 +428,15 @@ Full prerequisites, ordering, and verification: [`docs/DEPLOYMENT.md`](docs/DEPL
     error queue, replay).
   - `services/demo/flow.test.ts` — 9 tests (the 7 required scenarios + malformed
     payment + settlement authorization).
-  - `services/procurement/procurement.test.ts` — 7 tests (success, budget breach,
+  - `services/procurement/procurement.test.ts` — 9 tests (success, budget breach,
     service breach, revoked mandate, state authority, privilege guard,
-    deterministic fallback).
+    deterministic fallback, security safe, security blocked).
   - `services/audit/audit.test.ts` — 5 tests (unauthorized, authorized, encrypted
     metadata/tamper, selective disclosure, revoked + nonce replay).
   - `services/config/mode.test.ts` — mode resolution tests.
+  - `services/security/scanner.test.ts` — 9 tests (clean bytecode, SELFDESTRUCT,
+    DELEGATECALL, multiple dangerous, tx.origin, empty, scanProvider override,
+    clean scanProvider, repeated opcodes).
   - `services/agent-b/executor.test.ts` — delegation signature verification tests.
 - **`npm run typecheck`** (root + frontend) green.
 - **`npm run compile-check`** — 19 Solidity contracts compile via solc-js.
@@ -478,10 +504,11 @@ Optional, not-yet-implemented (see the 3-tier table below for status):
 | `veil-exact` demo adapter | — | ✅ (vendor scheme, honestly labeled) | — |
 | A2A delegation (agent→agent, signed) | ✅ signature-verified, replay-guarded | ✅ Agent B via `@a2a-js/sdk` v1 | streaming + push notifications |
 | On-chain agent registry (`VeilRegistry`) | ✅ deployed CC3 | ✅ self-registration + discovery | signed agent cards |
-| AI procurement agent (7 tools) | ✅ | ✅ deterministic planner | live wallet + LLM planner |
+| AI procurement agent (8 tools) | ✅ | ✅ deterministic planner | live wallet + LLM planner |
 | Audit vault AES-256-GCM + EIP-712 `AuditAccess` | ✅ | ✅ (ephemeral key by default) | KMS keys, durable store |
 | Kill switch | ✅ logic | ✅ | durable revocation record |
 | Reputation gate ≥ 3 | — | ✅ off-chain (+ ReputationEngine deployed) | on-chain enforcement |
+| Provider bytecode security scan | ✅ written, compile-verified | ✅ heuristic scanner local, BLOCKED on live deploy | on-chain threshold enforcement |
 | Provider hardening (TLS / API-key auth / rate limit) | ✅ middleware shipped | ✅ env-gated | mTLS, WAF |
 | Frontend console | — | ✅ dual-mode (demo/production badges) | a11y polish, E2E specs |
 
@@ -494,7 +521,8 @@ Optional, not-yet-implemented (see the 3-tier table below for status):
 | `services/attestation/` | Worker, proof generation, live-check, error-queue replay, config |
 | `services/provider/` | x402 HTTP rail, EIP-3009 verification, settlement ledger mirror, TLS/auth/rate-limit middleware |
 | `services/agent-b/` | A2A delegation server/client (Agent B), signed delegation verification |
-| `services/procurement/` | Procurement agent (7 tools), shop, deterministic planner |
+| `services/procurement/` | Procurement agent (8 tools), shop, deterministic planner |
+| `services/security/` | Provider bytecode scanner (heuristic opcode analysis) |
 | `services/audit/` | Audit vault, EIP-712 signer/verifier, HTTP server |
 | `services/config/` | Demo/production mode resolution + production gate |
 | `services/demo/` | End-to-end sim + flow tests |

@@ -58,22 +58,22 @@ export function createAuditServer(opts: AuditServerOptions) {
   const vault = new AuditVault(masterKey, keySource);
   const operator = opts.operatorAddress.toLowerCase();
 
-  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
     const [path, query] = url.split('?');
     const params = query ? new URLSearchParams(query) : new URLSearchParams();
 
     if (req.method === 'GET' && path === '/api/audit/health') {
-      return json(res, 200, { ok: true, keySource, txCount: vault.txCount, operator: opts.operatorAddress });
+      return json(res, 200, { ok: true, keySource, txCount: await vault.txCount(), operator: opts.operatorAddress });
     }
 
     // Public transaction view (never decrypts).
     if (req.method === 'GET' && path === '/api/audit/txs') {
-      return json(res, 200, { transactions: vault.list() });
+      return json(res, 200, { transactions: await vault.list() });
     }
     if (req.method === 'GET' && path.startsWith('/api/audit/tx/')) {
       const txId = path.split('/').pop() ?? '';
-      const view = vault.publicView(txId);
+      const view = await vault.publicView(txId);
       if (!view) return json(res, 404, { error: 'TransactionNotKnown' });
       return json(res, 200, view);
     }
@@ -81,18 +81,18 @@ export function createAuditServer(opts: AuditServerOptions) {
     // Auditor endpoints (signed + authorized + nonce-guarded).
     if (req.method === 'GET' && path.startsWith('/api/audit/disclosure/')) {
       const txId = path.split('/').pop() ?? '';
-      const auth = verifySigned(req, path, vault);
+      const auth = await verifySigned(req, path, vault);
       if (!auth.ok) return json(res, auth.status, { error: auth.error });
       const fields = params.get('fields')?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
-      const result = vault.disclose(txId, auth.auditor!, { fields: fields.length ? fields : undefined });
+      const result = await vault.disclose(txId, auth.auditor!, { fields: fields.length ? fields : undefined });
       if (result === undefined) return json(res, 404, { error: 'TransactionNotKnown' });
       return json(res, 200, { txId, auditor: auth.auditor, fields: fields.length ? fields : undefined, protectedData: result });
     }
     if (req.method === 'GET' && path.startsWith('/api/audit/evidence/')) {
       const txId = path.split('/').pop() ?? '';
-      const auth = verifySigned(req, path, vault);
+      const auth = await verifySigned(req, path, vault);
       if (!auth.ok) return json(res, auth.status, { error: auth.error });
-      const bundle = vault.evidenceBundle(txId, auth.auditor!);
+      const bundle = await vault.evidenceBundle(txId, auth.auditor!);
       if (bundle === undefined) return json(res, 404, { error: 'TransactionNotKnown' });
       return json(res, 200, { txId, auditor: auth.auditor, evidence: bundle });
     }
@@ -103,9 +103,9 @@ export function createAuditServer(opts: AuditServerOptions) {
         return json(res, 403, { error: 'Unauthorized: operator header required' });
       }
       if (path === '/api/audit/vault') {
-        return readBody(req, res, (body) => {
+        return readBody(req, res, async (body) => {
           const protectedData = body.protectedData as ProtectedData;
-          const { record, view } = vault.recordTransaction({
+          const { record, view } = await vault.recordTransaction({
             txId: body.txId,
             commitment: body.commitment,
             verificationStatus: body.verificationStatus ?? 'pending',
@@ -118,14 +118,14 @@ export function createAuditServer(opts: AuditServerOptions) {
         });
       }
       if (path === '/api/audit/authorize') {
-        return readBody(req, res, (body) => {
-          const account = vault.authorize(body.auditor, { scope: body.scope });
+        return readBody(req, res, async (body) => {
+          const account = await vault.authorize(body.auditor, { scope: body.scope });
           return json(res, 200, { auditor: account.auditor, authorized: account.authorized, scope: account.scope });
         });
       }
       if (path === '/api/audit/revoke') {
-        return readBody(req, res, (body) => {
-          const account = vault.revoke(body.auditor);
+        return readBody(req, res, async (body) => {
+          const account = await vault.revoke(body.auditor);
           if (!account) return json(res, 404, { error: 'AuditorUnknown' });
           return json(res, 200, { auditor: account.auditor, authorized: false, revokedAt: account.revokedAt });
         });
@@ -169,13 +169,13 @@ interface AuthCheck {
   error?: string;
 }
 
-function verifySigned(req: IncomingMessage, path: string, vault: AuditVault): AuthCheck {
+async function verifySigned(req: IncomingMessage, path: string, vault: AuditVault): Promise<AuthCheck> {
   const encoded = headerStr(req.headers['x-audit-auth'] ?? req.headers['x-audit-access']);
   if (!encoded) return { ok: false, status: 403, error: 'signed AuditAccess request required (X-Audit-Auth)' };
   const auditReq = decodeBase64Json<AuditAccessRequest>(encoded);
   if (!auditReq) return { ok: false, status: 400, error: 'malformed X-Audit-Auth' };
   const txId = path.split('/').pop() ?? '';
-  const verified = verifyAuditAccess(auditReq, {
+  const verified = await verifyAuditAccess(auditReq, {
     expectedResource: path,
     expectedTxId: txId,
     isAuthorized: (auditor) => vault.isAuthorized(auditor, txId),
@@ -183,7 +183,7 @@ function verifySigned(req: IncomingMessage, path: string, vault: AuditVault): Au
   if (!verified.ok || !verified.auditor) {
     return { ok: false, status: 403, error: `disclosure denied: ${verified.error}` };
   }
-  if (!vault.useNonce(verified.auditor, auditReq.nonce)) {
+  if (!(await vault.useNonce(verified.auditor, auditReq.nonce))) {
     return { ok: false, status: 403, error: 'nonce replay detected' };
   }
   return { ok: true, auditor: verified.auditor, status: 200 };
@@ -194,13 +194,13 @@ function isOperator(req: IncomingMessage, operator: string): boolean {
   return Boolean(caller) && caller!.toLowerCase() === operator;
 }
 
-function readBody(req: IncomingMessage, res: ServerResponse, fn: (body: Record<string, any>) => void): void {
+function readBody(req: IncomingMessage, res: ServerResponse, fn: (body: Record<string, any>) => unknown | Promise<unknown>): void {
   let body = '';
   req.on('data', (c) => (body += c));
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const parsed = JSON.parse(body || '{}') as Record<string, any>;
-      fn(parsed);
+      await fn(parsed);
     } catch (e: any) {
       return json(res, 400, { error: e?.message ?? 'bad request body' });
     }

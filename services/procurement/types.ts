@@ -17,6 +17,7 @@ import { X402PaymentRequirement } from '../provider/types';
 export const TOOL_NAMES = [
   'searchProviders',
   'getProviderDetails',
+  'checkProviderSecurity',
   'checkMandate',
   'checkBudget',
   'checkReputation',

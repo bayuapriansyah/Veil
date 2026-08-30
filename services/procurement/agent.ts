@@ -47,6 +47,7 @@ function openaiToolsSchema(): Array<Record<string, unknown>> {
   const defs: Array<{ name: ToolName; description: string; args: Record<string, string> }> = [
     { name: 'searchProviders', description: 'Discover providers offering a serviceId with reputation >= 3.', args: { serviceId: 'string' } },
     { name: 'getProviderDetails', description: 'Profile of one provider.', args: { provider: 'string' } },
+    { name: 'checkProviderSecurity', description: 'Scan provider bytecode for dangerous opcodes (SELFDESTRUCT, DELEGATECALL, etc.) and compute a risk score 0-100.', args: { provider: 'string' } },
     { name: 'checkMandate', description: 'Active mandates covering an (optional) serviceId.', args: {} },
     { name: 'checkBudget', description: 'Whether remaining ledger budget covers amountAtoms for serviceId.', args: { serviceId: 'string', amountAtoms: 'string' } },
     { name: 'checkReputation', description: 'Provider repute score (1-5) from the ledger.', args: { provider: 'string' } },
@@ -187,6 +188,10 @@ export class ProcurementAgent {
         }
         if (s.tool === 'checkReputation' && (d as { score?: number }).score! < 3) {
           return fail(`provider reputation ${(d as { score?: number }).score} < 3 (excluded)`);
+        }
+        if (s.tool === 'checkProviderSecurity' && (d as { passedThreshold?: boolean }).passedThreshold === false) {
+          const score = (d as { riskScore?: number }).riskScore ?? '?';
+          return fail(`provider security check failed: riskScore ${score} exceeds threshold`);
         }
         if (s.tool === 'checkMandate' && (d as { mandates?: unknown[] }).mandates?.length === 0) {
           return fail(`no active mandate covers the requested service`);
