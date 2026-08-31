@@ -73,16 +73,16 @@ Frontend (Next.js 14 app router):
 ### Sepolia (Chain ID 11155111)
 | Contract | Address |
 |----------|---------|
-| VeilSource | `0xe81F6d1A1aE506e03ca0e960954C319a32Bb771a` |
+| VeilSource | `0x105C47953A714F15749dF29394487217c7016B29` |
 
 ### Creditcoin CC3 (Chain ID 102031)
 | Contract | Address |
 |----------|---------|
-| AttestationReceiver | `0x1eD3F77826664057e55665B04A089437B371e4FA` |
+| AttestationReceiver | `0x5E2ECc270dE9E3202f9331d52bA7073B1319c62c` |
 | MandateManager | `0xD2CaB58eBD729580f00E6a8260dA2d410de6560E` |
 | EscrowManager | `0x9b6CC7C2Bcea8Ef9CAb92D818f8071c045762B37` |
 | ReputationEngine | `0x1b5056CB0dC71f6f36749548CDc3E1D2cc468587` |
-| SettlementEngine | `0xc593195E02094380a0c426179b70d32CE8A3f826` |
+| SettlementEngine | `0xD99511f66bFa5B16AD7e4fB504e359f69E57092e` |
 | ZKReceiptVerifier | `0x1D35b6381A55970fbE7Afe11EB96350147Bc6031` |
 | VeilRegistry | `0x6d9DCfAFC1Ee54Dcc1922d3d6BfC4C03402500eE` |
 | EvmV1Decoder | `0x912F3e988d0D8c4b6BD4671bE5D74664A4D24a65` |
