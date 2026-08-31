@@ -234,7 +234,7 @@ export function publicView(rec: TransactionRecord, masterKey?: Buffer): PublicTx
       base.provider = data.provider;
       base.amountUsd = data.amountUsd;
       base.serviceLabel = resolveServiceLabel(data.authorization.serviceId);
-    } catch { /* sealed box open failed — leave fields undefined */ }
+    } catch (e) { console.error(`[vault] publicView decrypt failed txId=${rec.txId}:`, e instanceof Error ? e.message : e); }
   }
 
   return base;

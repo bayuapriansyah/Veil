@@ -33,7 +33,7 @@ function DisclosureCard({ data }: { data: Record<string, unknown> | undefined })
       <div className="font-medium">Order Details</div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
         <span className="text-mut">Service</span>
-        <span>{String(d.serviceLabel ?? d.serviceId ?? '—')}</span>
+        <span>{String(d.serviceLabel ?? auth?.serviceId ?? '—')}</span>
         <span className="text-mut">Provider</span>
         <span className="font-mono">{String(d.provider ?? '—')}</span>
         <span className="text-mut">Amount</span>
