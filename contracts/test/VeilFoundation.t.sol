@@ -15,21 +15,20 @@ contract MockAttestationReceiver is IAttestationReceiver {
     mapping(uint256 => bool) public payments;
     mapping(uint256 => bool) public fulfillments;
     mapping(uint256 => bool) public zkReceipts;
-    mapping(uint256 => uint256) public amounts;
-    mapping(uint256 => bytes32) public services;
+    mapping(uint256 => bytes32) public commitments;
     mapping(uint256 => address) public agents;
-    mapping(uint256 => address) public providers;
     mapping(uint256 => bytes32) public zkProofHashes;
 
-    function setPayment(uint256 orderId, uint256 amount, bytes32 serviceId) external {
+    function setPayment(uint256 orderId) external {
         payments[orderId] = true;
-        amounts[orderId] = amount;
-        services[orderId] = serviceId;
     }
 
-    function setParties(uint256 orderId, address agent, address provider) external {
+    function setCommitment(uint256 orderId, bytes32 commitment) external {
+        commitments[orderId] = commitment;
+    }
+
+    function setParties(uint256 orderId, address agent) external {
         agents[orderId] = agent;
-        providers[orderId] = provider;
     }
 
     function setFulfillment(uint256 orderId) external {
@@ -49,20 +48,12 @@ contract MockAttestationReceiver is IAttestationReceiver {
         return fulfillments[orderId];
     }
 
-    function verifiedPaymentAmount(uint256 orderId) external view returns (uint256) {
-        return amounts[orderId];
-    }
-
-    function verifiedServiceIdOf(uint256 orderId) external view returns (bytes32) {
-        return services[orderId];
+    function verifiedCommitmentOf(uint256 orderId) external view returns (bytes32) {
+        return commitments[orderId];
     }
 
     function verifiedAgentOf(uint256 orderId) external view returns (address) {
         return agents[orderId];
-    }
-
-    function verifiedProviderOf(uint256 orderId) external view returns (address) {
-        return providers[orderId];
     }
 
     function isZKReceiptVerified(uint256 orderId) external view returns (bool) {
@@ -77,9 +68,10 @@ contract MockAttestationReceiver is IAttestationReceiver {
 contract VeilFoundationTest is Test {
     bytes32 internal constant SERVICE = keccak256("market-data");
     bytes32 internal constant OTHER_SERVICE = keccak256("compute");
+    bytes32 internal constant SALT = bytes32(uint256(0xABCD));
 
     address internal user = address(0xA11CE);
-    address payable internal provider = payable(address(0xB0B));
+    address payable internal provider_ = payable(address(0xB0B));
     address internal operator = address(0x0A0A);
     address internal stranger = address(0xBAD);
 
@@ -111,8 +103,12 @@ contract VeilFoundationTest is Test {
 
     function _createEscrow(uint256 orderId, uint256 mandateId, uint256 amount) internal {
         vm.prank(user);
-        escrows.createEscrow{value: amount}(orderId, mandateId, provider);
-        attestations.setParties(orderId, user, provider);
+        escrows.createEscrow{value: amount}(orderId, mandateId, provider_);
+        attestations.setParties(orderId, user);
+    }
+
+    function _computeCommitment(address addr, uint256 amount, bytes32 serviceId, bytes32 salt) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(addr, amount, serviceId, salt));
     }
 
     function testValidMandate() public {
@@ -144,14 +140,19 @@ contract VeilFoundationTest is Test {
     function testSuccessfulEscrowRelease() public {
         uint256 mandateId = _createMandate(10 ether, uint64(block.timestamp + 1 days));
         uint256 orderId = 101;
-        _createEscrow(orderId, mandateId, 2 ether);
-        attestations.setPayment(orderId, 2 ether, SERVICE);
+        uint256 amount = 2 ether;
+        _createEscrow(orderId, mandateId, amount);
+
+        bytes32 commitment = _computeCommitment(provider_, amount, SERVICE, SALT);
+        attestations.setPayment(orderId);
+        attestations.setCommitment(orderId, commitment);
         attestations.setFulfillment(orderId);
         attestations.setZKReceipt(orderId);
-        uint256 providerBefore = provider.balance;
+
+        uint256 providerBefore = provider_.balance;
         vm.prank(operator);
-        settlement.settle(orderId);
-        assertEq(provider.balance, providerBefore + 2 ether);
+        settlement.settle(orderId, SALT);
+        assertEq(provider_.balance, providerBefore + amount);
         assertEq(uint256(escrows.escrowStatus(orderId)), uint256(IEscrowManager.EscrowStatus.Released));
         assertEq(mandates.remainingBudget(mandateId), 8 ether);
     }
@@ -160,10 +161,10 @@ contract VeilFoundationTest is Test {
         uint256 mandateId = _createMandate(10 ether, uint64(block.timestamp + 1 days));
         uint256 orderId = 102;
         _createEscrow(orderId, mandateId, 2 ether);
-        attestations.setPayment(orderId, 2 ether, SERVICE);
+        attestations.setPayment(orderId);
         vm.prank(operator);
         vm.expectRevert();
-        settlement.settle(orderId);
+        settlement.settle(orderId, SALT);
         assertEq(uint256(escrows.escrowStatus(orderId)), uint256(IEscrowManager.EscrowStatus.Locked));
     }
 
@@ -171,11 +172,11 @@ contract VeilFoundationTest is Test {
         uint256 mandateId = _createMandate(10 ether, uint64(block.timestamp + 1 days));
         uint256 orderId = 200;
         _createEscrow(orderId, mandateId, 2 ether);
-        attestations.setPayment(orderId, 2 ether, SERVICE);
+        attestations.setPayment(orderId);
         attestations.setFulfillment(orderId);
         vm.prank(operator);
         vm.expectRevert();
-        settlement.settle(orderId);
+        settlement.settle(orderId, SALT);
         assertEq(uint256(escrows.escrowStatus(orderId)), uint256(IEscrowManager.EscrowStatus.Locked));
     }
 
@@ -200,39 +201,55 @@ contract VeilFoundationTest is Test {
     function testUnauthorizedSettlement() public {
         uint256 mandateId = _createMandate(10 ether, uint64(block.timestamp + 1 days));
         uint256 orderId = 104;
-        _createEscrow(orderId, mandateId, 2 ether);
-        attestations.setPayment(orderId, 2 ether, SERVICE);
+        uint256 amount = 2 ether;
+        _createEscrow(orderId, mandateId, amount);
+
+        bytes32 commitment = _computeCommitment(provider_, amount, SERVICE, SALT);
+        attestations.setPayment(orderId);
+        attestations.setCommitment(orderId, commitment);
         attestations.setFulfillment(orderId);
         attestations.setZKReceipt(orderId);
+
         vm.prank(stranger);
         vm.expectRevert();
-        settlement.settle(orderId);
+        settlement.settle(orderId, SALT);
     }
 
-    function testServiceMismatchBlocksSettlement() public {
+    function testCommitmentMismatchBlocksSettlement() public {
         uint256 mandateId = _createMandate(10 ether, uint64(block.timestamp + 1 days));
         uint256 orderId = 105;
-        _createEscrow(orderId, mandateId, 2 ether);
-        attestations.setPayment(orderId, 2 ether, OTHER_SERVICE);
+        uint256 amount = 2 ether;
+        _createEscrow(orderId, mandateId, amount);
+
+        // Set wrong commitment (OTHER_SERVICE instead of SERVICE)
+        bytes32 wrongCommitment = _computeCommitment(provider_, amount, OTHER_SERVICE, SALT);
+        attestations.setPayment(orderId);
+        attestations.setCommitment(orderId, wrongCommitment);
         attestations.setFulfillment(orderId);
         attestations.setZKReceipt(orderId);
+
         vm.prank(operator);
-        vm.expectRevert();
-        settlement.settle(orderId);
+        vm.expectRevert(SettlementEngine.CommitmentMismatch.selector);
+        settlement.settle(orderId, SALT);
     }
 
     function testRevokedMandateBlocksSettlementKillSwitch() public {
         uint256 mandateId = _createMandate(10 ether, uint64(block.timestamp + 1 days));
         uint256 orderId = 106;
-        _createEscrow(orderId, mandateId, 2 ether);
+        uint256 amount = 2 ether;
+        _createEscrow(orderId, mandateId, amount);
         vm.prank(user);
         mandates.revokeMandate(mandateId);
-        attestations.setPayment(orderId, 2 ether, SERVICE);
+
+        bytes32 commitment = _computeCommitment(provider_, amount, SERVICE, SALT);
+        attestations.setPayment(orderId);
+        attestations.setCommitment(orderId, commitment);
         attestations.setFulfillment(orderId);
         attestations.setZKReceipt(orderId);
+
         vm.prank(operator);
         vm.expectRevert();
-        settlement.settle(orderId);
+        settlement.settle(orderId, SALT);
     }
 
     // --- VeilRegistry tests --- //
@@ -252,7 +269,7 @@ contract VeilFoundationTest is Test {
     function testRegisterMultipleAgents() public {
         vm.prank(user);
         registry.registerAgent("http://agent1.com", "card1", bytes32(0));
-        vm.prank(provider);
+        vm.prank(provider_);
         registry.registerAgent("http://agent2.com", "card2", bytes32(0));
         assertEq(registry.activeAgentCount(), 2);
         uint256[] memory ids = registry.listActiveAgents();

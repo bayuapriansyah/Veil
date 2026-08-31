@@ -16,12 +16,13 @@ import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync } fr
 import { join } from 'node:path';
 
 import { isDemoMode } from '../config/mode';
+import { computeCommitment, generateSalt } from '../audit/crypto';
 
 const SOURCE_ABI = [
-  'function recordAgentPayment(uint256 orderId, address provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef) external',
+  'function recordAgentPayment(uint256 orderId, address provider, bytes32 commitment) external',
   'function recordFulfillment(uint256 orderId, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef) external',
   'function recordZKReceipt(uint256 orderId, address provider, bytes32 zkProofHash, bytes32 serviceId) external',
-  'event AgentPayment(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef)',
+  'event AgentPayment(uint256 indexed orderId, address indexed agent, bytes32 commitment)',
   'event FulfillmentReceipt(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef)',
   'event ZKReceiptRecorded(uint256 indexed orderId, address indexed provider, bytes32 indexed zkProofHash, bytes32 serviceId, uint256 timestamp)',
 ];
@@ -29,6 +30,8 @@ const SOURCE_ABI = [
 export interface OnchainRecordResult {
   ok: boolean;
   txHash?: string;
+  salt?: string;
+  commitment?: string;
   error?: string;
 }
 
@@ -67,31 +70,30 @@ export async function recordAgentPayment(
 ): Promise<OnchainRecordResult> {
   const env = sourceChainEnv();
   if (isDemoMode()) {
-    // Demo mode never touches an RPC: wallets are generated, so there is
-    // nothing to broadcast. The vault honestly labels this order `mirror`.
     return { ok: false, error: 'demo mode — on-chain recording disabled (mirror)' };
   }
   if (!env.contractAddress || !env.privateKey) {
     return { ok: false, error: 'on-chain record disabled: SOURCE_CHAIN_CONTRACT_ADDRESS / SOURCE_CHAIN_WALLET_PRIVATE_KEY not set' };
   }
   try {
+    const salt = generateSalt();
+    const commitment = computeCommitment(opts.provider, opts.amount, opts.serviceId, salt);
+
     const provider = new JsonRpcProvider(env.rpcUrl);
     const wallet = new Wallet(signerPrivateKey ?? env.privateKey, provider);
     const contract = new Contract(env.contractAddress, SOURCE_ABI, wallet);
     const tx = await contract.recordAgentPayment(
       opts.orderId,
       opts.provider,
-      opts.amount,
-      opts.serviceId,
-      opts.transactionRef,
+      commitment,
       { gasLimit: 100_000 },
     );
     try {
       const receipt = await tx.wait();
       if (receipt.status === 0) return { ok: false, error: 'tx reverted on-chain' };
-      return { ok: true, txHash: receipt.hash };
+      return { ok: true, txHash: receipt.hash, salt, commitment };
     } catch {
-      return { ok: true, txHash: tx.hash };
+      return { ok: true, txHash: tx.hash, salt, commitment };
     }
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);

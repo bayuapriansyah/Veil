@@ -40,6 +40,8 @@ export function sampleProtected(txId: string): ProtectedData {
     provider: PROVIDER,
     amountAtoms: '1000000000000000',
     amountUsd: '0.001',
+    salt: '0x' + '01'.repeat(32),
+    commitment: '0x' + 'ab'.repeat(32),
     authorization: {
       mandateId: 1,
       mandateOwner: OPERATOR,

@@ -10,6 +10,13 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 /// @dev    Kept intentionally minimal per the verified Attestcoin best practices:
 ///         source contracts only hold minimal logic and emit events. The events
 ///         below are what the off-chain worker proves on Creditcoin.
+///
+///         PRIVACY (commitment scheme):
+///         AgentPayment emits only a commitment hash — provider, amount, and
+///         serviceId are hidden in the event log. The preimage is stored in the
+///         encrypted audit vault and revealed only at settlement time by the
+///         operator. The orderProvider mapping is still needed for the
+///         recordFulfillment access guard but is NOT emitted in the event.
 contract VeilSource is Ownable, ReentrancyGuard {
     // ------------------------------------------------------------------ //
     //  Events consumed by the Attestcoin Protocol                         //
@@ -20,17 +27,11 @@ contract VeilSource is Ownable, ReentrancyGuard {
     // event AgentPayment(
     //     uint256 indexed orderId,
     //     address indexed agent,
-    //     address indexed provider,
-    //     uint256 amount,          // data
-    //     bytes32 serviceId,       // data
-    //     bytes32 transactionRef); // data
+    //     bytes32 commitment);  // keccak256(abi.encodePacked(provider, amount, serviceId, salt))
     event AgentPayment(
         uint256 indexed orderId,
         address indexed agent,
-        address indexed provider,
-        uint256 amount,
-        bytes32 serviceId,
-        bytes32 transactionRef
+        bytes32 commitment
     );
 
     event FulfillmentReceipt(
@@ -92,26 +93,24 @@ contract VeilSource is Ownable, ReentrancyGuard {
 
     /// @notice Records a payment made by an agent for a service order and
     ///         emits the AgentPayment event that Attestcoin will prove on Creditcoin.
+    /// @dev    Only a commitment hash is emitted — the preimage (provider, amount,
+    ///         serviceId, salt) is stored in the encrypted audit vault.
     /// @param orderId Unique order id (shared with the Creditcoin side).
-    /// @param provider Address of the service provider receiving payment.
-    /// @param amount Amount paid in the source-chain settlement asset.
-    /// @param serviceId Identifier of the service/category being purchased.
-    /// @param transactionRef Off-chain reference (e.g. x402 request id).
+    /// @param provider Address of the service provider (stored, NOT emitted in event).
+    /// @param commitment keccak256(abi.encodePacked(provider, amount, serviceId, salt)).
     function recordAgentPayment(
         uint256 orderId,
         address provider,
-        uint256 amount,
-        bytes32 serviceId,
-        bytes32 transactionRef
+        bytes32 commitment
     ) external {
-        if (amount == 0) revert InvalidAmount();
+        if (commitment == bytes32(0)) revert InvalidAmount();
         if (provider == address(0)) revert InvalidAddress();
         if (orderPaidBy[orderId] != address(0)) revert OrderAlreadyPaid();
 
         orderPaidBy[orderId] = msg.sender;
         orderProvider[orderId] = provider;
 
-        emit AgentPayment(orderId, msg.sender, provider, amount, serviceId, transactionRef);
+        emit AgentPayment(orderId, msg.sender, commitment);
     }
 
     /// @notice Records a fulfillment by the provider and emits the FulfillmentReceipt

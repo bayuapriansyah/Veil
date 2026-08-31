@@ -1,4 +1,4 @@
-import { AuditorAccount, DisclosureOptions, EvidenceBundle, ProtectedData, PublicTxView, TransactionInput, TransactionRecord } from './types';
+import { AuditorAccount, DisclosureOptions, EvidenceBundle, ProtectedData, PublicTxView, SettlementPreimage, TransactionInput, TransactionRecord } from './types';
 
 export interface VaultBackend {
   recordTransaction(input: TransactionInput): Promise<{ record: TransactionRecord; view: PublicTxView }>;
@@ -7,6 +7,7 @@ export interface VaultBackend {
   get(txId: string): Promise<TransactionRecord | undefined>;
   list(): Promise<PublicTxView[]>;
   publicView(txId: string): Promise<PublicTxView | undefined>;
+  settlementPreimage(txId: string): Promise<SettlementPreimage | undefined>;
   readonly keySourceLabel: string;
   txCount(): Promise<number>;
   authorize(auditor: string, opts?: { scope?: 'all' | string[] }): Promise<AuditorAccount>;

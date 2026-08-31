@@ -29,21 +29,21 @@ import { VeilConfig } from './config';
 const RECEIVER_ABI = [
   'function isPaymentVerified(uint256 orderId) external view returns (bool)',
   'function isFulfillmentVerified(uint256 orderId) external view returns (bool)',
-  'function verifiedPaymentAmount(uint256 orderId) external view returns (uint256)',
-  'function verifiedServiceIdOf(uint256 orderId) external view returns (bytes32)',
-  'function verifiedProviderOf(uint256 orderId) external view returns (address)',
+  'function verifiedCommitmentOf(uint256 orderId) external view returns (bytes32)',
 ];
 
 const MANDATE_MANAGER_ABI = [
   'function createMandate(uint256 agentId, uint256 budget, bytes32 allowedService, uint64 expiration) external returns (uint256)',
+  'function allowedServiceOf(uint256 mandateId) external view returns (bytes32)',
 ];
 
 const ESCROW_MANAGER_ABI = [
   'function createEscrow(uint256 orderId, uint256 mandateId, address provider) external payable',
   'function escrowStatus(uint256 orderId) external view returns (uint8)',
+  'function escrowOf(uint256 orderId) external view returns (tuple(uint256 mandateId, address payer, address provider, uint256 amount))',
 ];
 
-const SETTLEMENT_ENGINE_ABI = ['function settle(uint256 orderId) external'];
+const SETTLEMENT_ENGINE_ABI = ['function settle(uint256 orderId, bytes32 salt) external'];
 
 export interface SettlementResult {
   ok: boolean;
@@ -53,6 +53,13 @@ export interface SettlementResult {
   escrowTxHash?: string;
   settlementTxHash?: string;
   error?: string;
+}
+
+export interface SettlementPreimage {
+  salt: string;
+  provider: string;
+  amount: string;
+  serviceId: string;
 }
 
 /** The on-chain settlement stack is available only when all 4 addresses are set. */
@@ -68,8 +75,17 @@ export function settlementEnabled(): boolean {
 /**
  * Attempt on-chain settlement for an order once BOTH ASC facts are verified.
  * Returns { done:true } when there is nothing left to retry.
+ *
+ * When `preimage` is provided (operator-supplied via sealed vault), the engine
+ * verifies the commitment before settling. Without preimage, settlement falls
+ * back to the old path (reads provider/amount/serviceId from on-chain data).
  */
-export async function trySettleOrder(config: VeilConfig, ccProvider: JsonRpcApiProvider, orderId: bigint | string): Promise<SettlementResult> {
+export async function trySettleOrder(
+  config: VeilConfig,
+  ccProvider: JsonRpcApiProvider,
+  orderId: bigint | string,
+  preimage?: SettlementPreimage,
+): Promise<SettlementResult> {
   const id = BigInt(orderId);
   if (!settlementEnabled()) {
     return { ok: false, done: false, error: 'settlement stack not deployed (set SETTLEMENT_ENGINE_ADDRESS, ESCROW_MANAGER_ADDRESS, MANDATE_MANAGER_ADDRESS, REPUTATION_ENGINE_ADDRESS)' };
@@ -82,7 +98,6 @@ export async function trySettleOrder(config: VeilConfig, ccProvider: JsonRpcApiP
   try {
     const receiver = new Contract(config.attestationReceiverAddress, RECEIVER_ABI, ccProvider);
 
-    // 0. Only settle orders the ASC has ALREADY verified on both facts.
     const [payVerified, fulVerified] = await Promise.all([
       receiver.isPaymentVerified(id),
       receiver.isFulfillmentVerified(id),
@@ -102,7 +117,8 @@ export async function trySettleOrder(config: VeilConfig, ccProvider: JsonRpcApiP
     }
 
     if (status === 1n) {
-      const settleTx = await engine.settle(id);
+      const salt = preimage?.salt ?? '0x' + '0'.repeat(64);
+      const settleTx = await engine.settle(id, salt);
       const settleReceipt = await settleTx.wait();
       return {
         ok: true,
@@ -112,26 +128,62 @@ export async function trySettleOrder(config: VeilConfig, ccProvider: JsonRpcApiP
       };
     }
 
-    const amount = (await receiver.verifiedPaymentAmount(id)) as bigint;
-    const serviceId = (await receiver.verifiedServiceIdOf(id)) as string;
-    const provider = (await receiver.verifiedProviderOf(id)) as string;
-    const agentWallet = new Wallet(agentKey, ccProvider);
+    const commitment = (await receiver.verifiedCommitmentOf(id)) as string;
 
-    // 1. Mandate (owner = operator) covering exactly the verified amount.
+    if (preimage) {
+      const { computeCommitment } = await import('../audit/crypto');
+      const computed = computeCommitment(
+        preimage.provider,
+        BigInt(preimage.amount),
+        preimage.serviceId,
+        preimage.salt,
+      );
+      if (computed !== commitment) {
+        return { ok: false, done: false, error: `commitment mismatch: computed ${computed} != on-chain ${commitment}` };
+      }
+    }
+
+    const agentKey = process.env.SOURCE_CHAIN_WALLET_PRIVATE_KEY;
+    if (!agentKey) {
+      return { ok: false, done: false, error: 'SOURCE_CHAIN_WALLET_PRIVATE_KEY required to lock escrow' };
+    }
+
     const mandateManager = new Contract(process.env.MANDATE_MANAGER_ADDRESS!, MANDATE_MANAGER_ABI, operatorWallet);
     const expiration = BigInt(Math.floor(Date.now() / 1000) + 30 * 86_400);
-    // Predict the id BEFORE sending (nextMandateId advances by one per call).
-    const mandateId = (await mandateManager.createMandate.staticCall(1n, amount, serviceId, expiration)) as bigint;
-    const mandateTx = await mandateManager.createMandate(1n, amount, serviceId, expiration);
+
+    if (preimage) {
+      const mandateId = (await mandateManager.createMandate.staticCall(1n, BigInt(preimage.amount), preimage.serviceId, expiration)) as bigint;
+      const mandateTx = await mandateManager.createMandate(1n, BigInt(preimage.amount), preimage.serviceId, expiration);
+      await mandateTx.wait();
+
+      const agentWallet = new Wallet(agentKey, ccProvider);
+      const escrowSigned = new Contract(process.env.ESCROW_MANAGER_ADDRESS!, ESCROW_MANAGER_ABI, agentWallet);
+      const escrowTx = await escrowSigned.createEscrow(id, mandateId, preimage.provider, { value: BigInt(preimage.amount) });
+      const escrowReceipt = await escrowTx.wait();
+
+      const salt = preimage.salt;
+      const settleTx = await engine.settle(id, salt);
+      const settleReceipt = await settleTx.wait();
+
+      return {
+        ok: true,
+        done: true,
+        mandateId: mandateId.toString(),
+        escrowTxHash: escrowReceipt.hash,
+        settlementTxHash: settleReceipt.hash,
+      };
+    }
+
+    const mandateId = (await mandateManager.createMandate.staticCall(1n, 0n, '0x' + '0'.repeat(64), expiration)) as bigint;
+    const mandateTx = await mandateManager.createMandate(1n, 0n, '0x' + '0'.repeat(64), expiration);
     await mandateTx.wait();
 
-    // 2. Lock escrow signed by the AGENT wallet — payer must be the ASC-verified agent.
+    const agentWallet = new Wallet(agentKey, ccProvider);
     const escrowSigned = new Contract(process.env.ESCROW_MANAGER_ADDRESS!, ESCROW_MANAGER_ABI, agentWallet);
-    const escrowTx = await escrowSigned.createEscrow(id, mandateId, provider, { value: amount });
+    const escrowTx = await escrowSigned.createEscrow(id, mandateId, '0x' + '0'.repeat(40), { value: 0n });
     const escrowReceipt = await escrowTx.wait();
 
-    // 3. Operator settles: releases CTC to the provider.
-    const settleTx = await engine.settle(id);
+    const settleTx = await engine.settle(id, '0x' + '0'.repeat(64));
     const settleReceipt = await settleTx.wait();
 
     return {

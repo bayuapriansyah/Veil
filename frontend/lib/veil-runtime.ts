@@ -416,6 +416,11 @@ class VeilRuntime {
     return this.vault.attachSettlement(txId, opts);
   }
 
+  async settlementPreimage(txId: string): Promise<{ salt: string; provider: string; amount: string; serviceId: string } | undefined> {
+    await this.start();
+    return this.vault.settlementPreimage(txId);
+  }
+
   recordsFailed(order: RuntimeOrder): void {
     this.orders.unshift(order);
   }

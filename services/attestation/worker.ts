@@ -24,14 +24,14 @@ import { join } from 'node:path';
 // Human-readable ABI fragment for the AttestationReceiver.execute signature.
 const ATTESTATION_RECEIVER_EXECUTE_ABI = [
   'function execute(uint8 action, uint64 chainKey, uint64 blockHeight, bytes calldata encodedTransaction, bytes32 merkleRoot, tuple(bytes32 hash, bool isLeft)[] calldata siblings, bytes32 lowerEndpointDigest, bytes32[] calldata continuityRoots) external returns (bool)',
-  'event PaymentVerified(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 queryId)',
+  'event PaymentVerified(uint256 indexed orderId, address indexed agent, bytes32 commitment, bytes32 queryId)',
   'event FulfillmentVerified(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 queryId)',
   'event SecurityScanVerified(uint256 indexed providerKey, uint8 riskScore, bool passedThreshold, bytes32 queryId)',
   'event ZKReceiptVerified(uint256 indexed orderId, address indexed provider, bytes32 zkProofHash, bytes32 queryId)',
 ];
 
 const VEIL_SOURCE_ABI = [
-  'event AgentPayment(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef)',
+  'event AgentPayment(uint256 indexed orderId, address indexed agent, bytes32 commitment)',
   'event FulfillmentReceipt(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef)',
   'event SecurityScanRecorded(address indexed provider, bytes32 indexed bytecodeHash, uint8 riskScore, bool passedThreshold, address scanner)',
   'event ZKReceiptRecorded(uint256 indexed orderId, address indexed provider, bytes32 indexed zkProofHash, bytes32 serviceId, uint256 timestamp)',
@@ -114,6 +114,29 @@ function startHealthCheck(port: number): void {
 
 const POLL_INTERVAL_MS = 10_000;
 const MAX_PROCESSED_TXS = 1000;
+
+/**
+ * Best-effort: fetch the settlement preimage (salt, provider, amount, serviceId)
+ * from the frontend vault. Returns undefined if the vault is unreachable or
+ * the record is not found.
+ */
+async function fetchVaultPreimage(
+  vaultBaseUrl: string,
+  orderId: string,
+): Promise<{ salt: string; provider: string; amount: string; serviceId: string } | undefined> {
+  try {
+    const res = await fetch(`${vaultBaseUrl}/api/veil/settle`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ orderId, dryRun: true }),
+    });
+    if (!res.ok) return undefined;
+    const data = await res.json() as { preimage?: { salt: string; provider: string; amount: string; serviceId: string } };
+    return data.preimage;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Best-effort: tell the frontend vault that a proof was submitted, so the
@@ -322,7 +345,9 @@ async function main() {
             if (orderId !== undefined) {
               let settlement: SettlementResult | undefined;
               if (action === 1 && !settledOrders.has(orderId)) {
-                const res = await trySettleOrder(config, ccProvider, orderId).catch(
+                const vaultBaseUrl = process.env.VEIL_API_BASE ?? 'http://127.0.0.1:3000';
+                const preimage = await fetchVaultPreimage(vaultBaseUrl, orderId);
+                const res = await trySettleOrder(config, ccProvider, orderId, preimage).catch(
                   (e: any): SettlementResult => ({ ok: false, done: false, error: `settle exception: ${e?.message ?? e}` }),
                 );
                 if (res.ok) {
@@ -338,9 +363,10 @@ async function main() {
               await notifyVault(attachUrl, `security-${providerKey}`, hash, txHash).catch((e: any) => log('error', 'Vault notify failed', { provider: providerKey, error: e?.message ?? e }));
             } else if (action === 3 && orderId !== undefined) {
               await notifyVault(attachUrl, `veil-${orderId}`, hash, txHash, undefined, 'verified').catch((e: any) => log('error', 'Vault notify failed', { orderId, error: e?.message ?? e }));
-              // Auto-settle after ZK receipt is proven (if payment + fulfillment also proven)
               if (!settledOrders.has(orderId)) {
-                const res = await trySettleOrder(config, ccProvider, orderId).catch(
+                const vaultBaseUrl = process.env.VEIL_API_BASE ?? 'http://127.0.0.1:3000';
+                const preimage = await fetchVaultPreimage(vaultBaseUrl, orderId);
+                const res = await trySettleOrder(config, ccProvider, orderId, preimage).catch(
                   (e: any): SettlementResult => ({ ok: false, done: false, error: `settle exception: ${e?.message ?? e}` }),
                 );
                 if (res.ok) {

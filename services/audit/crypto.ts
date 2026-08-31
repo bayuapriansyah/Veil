@@ -21,6 +21,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
+import { keccak256, solidityPacked } from 'ethers';
 import { SealedBox } from './types';
 
 export const AES_TAG_LENGTH = 16; // GCM auth tag bytes
@@ -101,4 +102,17 @@ export function boxesEqual(a: SealedBox | undefined, b: SealedBox): boolean {
   } catch {
     return false;
   }
+}
+
+export function generateSalt(): string {
+  return '0x' + randomBytes(32).toString('hex');
+}
+
+export function computeCommitment(provider: string, amount: bigint | string, serviceId: string, salt: string): string {
+  return keccak256(
+    solidityPacked(
+      ['address', 'uint256', 'bytes32', 'bytes32'],
+      [provider, BigInt(amount), serviceId, salt]
+    )
+  );
 }

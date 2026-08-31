@@ -15,11 +15,10 @@ import {IAttestationReceiver} from "./interfaces/IAttestationReceiver.sol";
 ///         a verification result: state only changes after a real proof is
 ///         validated synchronously by Creditcoin's native verifier.
 ///
-///         Flow:
-///           SOURCE CHAIN (Sepolia) --AgentPayment/FulfillmentReceipt event-->
-///           worker generates proof (gluwa usc-sdk) -->
-///           execute() verifies via precompile -->
-///           state updated: paymentVerified / fulfillmentVerified
+///         PRIVACY: AgentPayment now emits only a commitment hash. The ASC stores
+///         verifiedCommitment instead of verifiedPaymentAmount/verifiedServiceId/
+///         verifiedProvider. The settlement operator reveals the preimage from the
+///         encrypted vault at settlement time.
 contract AttestationReceiver is Ownable, IAttestationReceiver {
     // ------------------------------------------------------------------ //
     //  Verified Attestcoin primitives                                    //
@@ -28,9 +27,9 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     mapping(bytes32 => bool) public processedQueries;
 
     // Event signatures of the VeilSource contract on the source chain.
-    // AgentPayment(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 transactionRef)
+    // AgentPayment(uint256 indexed orderId, address indexed agent, bytes32 commitment)
     bytes32 public constant AGENT_PAYMENT_EVENT_SIGNATURE =
-        keccak256("AgentPayment(uint256,address,address,uint256,bytes32,bytes32)");
+        keccak256("AgentPayment(uint256,address,bytes32)");
     // FulfillmentReceipt(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 serviceId, bytes32 transactionRef)
     bytes32 public constant FULFILLMENT_RECEIPT_EVENT_SIGNATURE =
         keccak256("FulfillmentReceipt(uint256,address,bytes32,bytes32,bytes32)");
@@ -52,10 +51,8 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     //  Verification state (read by SettlementEngine)                     //
     // ------------------------------------------------------------------ //
     mapping(uint256 => bool) public paymentsVerified;
-    mapping(uint256 => uint256) public verifiedPaymentAmounts;
-    mapping(uint256 => bytes32) public verifiedServiceId;
+    mapping(uint256 => bytes32) public verifiedCommitment;
     mapping(uint256 => address) public verifiedAgent;
-    mapping(uint256 => address) public verifiedProvider;
     mapping(uint256 => bool) public fulfillmentsVerified;
     mapping(uint256 => bytes32) public verifiedResultHash;
     mapping(uint256 => bool) public securityScansVerified;
@@ -77,7 +74,7 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     error TransactionFailed();
 
     event SourceContractRegistered(address indexed veilSource);
-    event PaymentVerified(uint256 indexed orderId, address indexed agent, address indexed provider, uint256 amount, bytes32 serviceId, bytes32 queryId);
+    event PaymentVerified(uint256 indexed orderId, address indexed agent, bytes32 commitment, bytes32 queryId);
     event FulfillmentVerified(uint256 indexed orderId, address indexed provider, bytes32 resultHash, bytes32 queryId);
     event SecurityScanVerified(uint256 indexed providerKey, uint8 riskScore, bool passedThreshold, bytes32 queryId);
     event ZKReceiptVerified(uint256 indexed orderId, address indexed provider, bytes32 zkProofHash, bytes32 queryId);
@@ -119,9 +116,6 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
         bytes32 queryId = _computeQueryId(chainKey, blockHeight, merkleRoot, siblings);
 
         if (processedQueries[queryId]) revert();
-        // Marked before verification is intentional: if _verifyProof reverts the
-        // whole call (state rolled back), so a failed submission can never be
-        // blocked by a half-consumed queryId. Only succeeded proofs stay marked.
         processedQueries[queryId] = true;
 
         bool verified = _verifyProof(
@@ -201,21 +195,19 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
         );
 
         EvmV1Decoder.LogEntry memory log = logs[0];
+        // AgentPayment(uint256 indexed orderId, address indexed agent, bytes32 commitment)
+        // All 3 params indexed → topics[0]=sig, [1]=orderId, [2]=agent, [3]=commitment
         if (log.topics.length != 4) revert();
 
         uint256 orderId = uint256(log.topics[1]);
         address agent = address(uint160(uint256(log.topics[2])));
-        address provider = address(uint160(uint256(log.topics[3])));
-
-        (uint256 amount, bytes32 serviceId, bytes32 transactionRef) = abi.decode(log.data, (uint256, bytes32, bytes32));
+        bytes32 commitment = bytes32(log.topics[3]);
 
         paymentsVerified[orderId] = true;
-        verifiedPaymentAmounts[orderId] = amount;
-        verifiedServiceId[orderId] = serviceId;
+        verifiedCommitment[orderId] = commitment;
         verifiedAgent[orderId] = agent;
-        verifiedProvider[orderId] = provider;
 
-        emit PaymentVerified(orderId, agent, provider, amount, serviceId, queryId);
+        emit PaymentVerified(orderId, agent, commitment, queryId);
     }
 
     function _processFulfillment(bytes32 queryId, bytes memory encodedTransaction) internal {
@@ -279,8 +271,6 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
     }
 
     /// @dev Validates a decoded transaction and returns matching event logs.
-    ///      Throws unless: tx type is supported, receipt succeeded (status==1),
-    ///      the event exists, and it was emitted by the registered VeilSource.
     function _validateTransactionContents(
         bytes memory encodedTransaction,
         bytes32 eventSignature
@@ -310,20 +300,12 @@ contract AttestationReceiver is Ownable, IAttestationReceiver {
         return fulfillmentsVerified[orderId];
     }
 
-    function verifiedPaymentAmount(uint256 orderId) external view returns (uint256) {
-        return verifiedPaymentAmounts[orderId];
-    }
-
-    function verifiedServiceIdOf(uint256 orderId) external view returns (bytes32) {
-        return verifiedServiceId[orderId];
+    function verifiedCommitmentOf(uint256 orderId) external view returns (bytes32) {
+        return verifiedCommitment[orderId];
     }
 
     function verifiedAgentOf(uint256 orderId) external view returns (address) {
         return verifiedAgent[orderId];
-    }
-
-    function verifiedProviderOf(uint256 orderId) external view returns (address) {
-        return verifiedProvider[orderId];
     }
 
     function isSecurityScanVerified(address provider) external view returns (bool) {

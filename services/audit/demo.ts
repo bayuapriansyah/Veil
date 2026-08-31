@@ -35,6 +35,8 @@ function orderProtected(orderId: string): ProtectedData {
     provider: PROVIDER,
     amountAtoms: '1000000000000000',
     amountUsd: '0.001',
+    salt: '0x' + '01'.repeat(32),
+    commitment: '0x' + 'ab'.repeat(32),
     authorization: { mandateId: 1, mandateOwner: OPERATOR, serviceId: SERVICE_MARKET_DATA, expiresAt: 4_102_444_800 },
     paymentEvidence: { orderId, paymentVerified: true, scheme: 'veil-exact', recordedAt: 1_700_000_000 },
     fulfillmentEvidence: { resultHash: '0x' + 'f'.repeat(64), fulfillmentVerified: true, recordedAt: 1_700_000_001 },

@@ -8,6 +8,12 @@ import {IMandateManager} from "./interfaces/IMandateManager.sol";
 import {IEscrowManager} from "./interfaces/IEscrowManager.sol";
 import {ReputationEngine} from "./ReputationEngine.sol";
 
+/// @title SettlementEngine
+/// @notice Settles orders on Creditcoin after cross-chain attestation.
+/// @dev    The operator provides `salt` at settlement time. The engine verifies
+///         that keccak256(provider, amount, serviceId, salt) matches the on-chain
+///         commitment stored by the AttestationReceiver. This ensures the operator
+///         cannot forge settlement data without the vault preimage.
 contract SettlementEngine is OwnableLite, ReentrancyGuardLite {
     IMandateManager public immutable mandates;
     IEscrowManager public immutable escrows;
@@ -19,11 +25,10 @@ contract SettlementEngine is OwnableLite, ReentrancyGuardLite {
     error PaymentNotVerified();
     error FulfillmentNotVerified();
     error BudgetNotCompliant();
-    error PaymentAmountMismatch();
     error EscrowNotLocked();
     error InvalidAttestation();
-    error EscrowPartyMismatch();
     error ZKProofNotVerified();
+    error CommitmentMismatch();
 
     event SettlementOperatorSet(address indexed operator);
     event AttestationReceiverSet(address indexed receiver);
@@ -64,23 +69,30 @@ contract SettlementEngine is OwnableLite, ReentrancyGuardLite {
         emit ReputationEngineSet(address(reputationEngine));
     }
 
-    function settle(uint256 orderId) external onlySettlementOperator nonReentrant {
+    /// @notice Settles an order after cross-chain attestation.
+    /// @dev    The operator provides `salt` which, together with the escrow's
+    ///         provider/amount and the mandate's serviceId, must hash to the
+    ///         on-chain commitment. This binds the settlement to the original
+    ///         purchase without revealing the preimage on-chain.
+    /// @param orderId The order to settle.
+    /// @param salt The commitment salt (revealed from vault at settlement time).
+    function settle(uint256 orderId, bytes32 salt) external onlySettlementOperator nonReentrant {
         if (escrows.escrowStatus(orderId) != IEscrowManager.EscrowStatus.Locked) revert EscrowNotLocked();
         uint256 mandateId = escrows.escrowMandate(orderId);
         uint256 amount = escrows.escrowAmount(orderId);
         address provider = escrows.escrowProvider(orderId);
-        bytes32 serviceId = attestationReceiver.verifiedServiceIdOf(orderId);
-        if (serviceId == bytes32(0)) revert InvalidAttestation();
-        if (!mandates.isMandateValid(mandateId, serviceId, amount)) revert BudgetNotCompliant();
+
         if (!attestationReceiver.isPaymentVerified(orderId)) revert PaymentNotVerified();
         if (!attestationReceiver.isFulfillmentVerified(orderId)) revert FulfillmentNotVerified();
         if (!attestationReceiver.isZKReceiptVerified(orderId)) revert ZKProofNotVerified();
-        if (attestationReceiver.verifiedPaymentAmount(orderId) < amount) revert PaymentAmountMismatch();
-        // The escrow's counterparties MUST equal the ASC-verified ones: the order
-        // attributing this spend to a payer/provider comes from source-chain facts,
-        // not from whoever happened to lock the escrow.
-        if (escrows.escrowPayer(orderId) != attestationReceiver.verifiedAgentOf(orderId)) revert EscrowPartyMismatch();
-        if (escrows.escrowProvider(orderId) != attestationReceiver.verifiedProviderOf(orderId)) revert EscrowPartyMismatch();
+
+        // Verify commitment: keccak256(provider, amount, serviceId, salt) == on-chain commitment
+        bytes32 commitment = attestationReceiver.verifiedCommitmentOf(orderId);
+        if (commitment == bytes32(0)) revert InvalidAttestation();
+        bytes32 computed = keccak256(abi.encodePacked(provider, amount, _serviceIdOf(mandateId), salt));
+        if (computed != commitment) revert CommitmentMismatch();
+
+        if (!mandates.isMandateValid(mandateId, _serviceIdOf(mandateId), amount)) revert BudgetNotCompliant();
         mandates.recordSpend(mandateId, amount);
         escrows.release(orderId);
         if (address(reputation) != address(0)) reputation.recordSettlementSuccess(provider);
@@ -98,5 +110,9 @@ contract SettlementEngine is OwnableLite, ReentrancyGuardLite {
             reputation.recordSettlementFailure(provider);
         }
         emit SettlementRefunded(orderId, mandateId, provider, amount);
+    }
+
+    function _serviceIdOf(uint256 mandateId) internal view returns (bytes32) {
+        return mandates.allowedServiceOf(mandateId);
     }
 }

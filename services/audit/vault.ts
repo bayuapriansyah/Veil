@@ -8,6 +8,7 @@ import {
   EvidenceBundle,
   ProtectedData,
   PublicTxView,
+  SettlementPreimage,
   TransactionInput,
   TransactionRecord,
 } from './types';
@@ -94,6 +95,19 @@ export class AuditVault implements VaultBackend {
   async publicView(txId: string): Promise<PublicTxView | undefined> {
     const rec = this.transactions.get(txId);
     return rec ? publicView(rec) : undefined;
+  }
+
+  async settlementPreimage(txId: string): Promise<SettlementPreimage | undefined> {
+    const rec = this.transactions.get(txId);
+    if (!rec) return undefined;
+    const plaintext = openSealedBox(this.masterKey, txId, rec.protected);
+    const data = JSON.parse(plaintext) as ProtectedData;
+    return {
+      salt: data.salt ?? '0x' + '0'.repeat(64),
+      provider: data.provider,
+      amount: data.amountAtoms,
+      serviceId: data.authorization.serviceId,
+    };
   }
 
   get keySourceLabel(): string {

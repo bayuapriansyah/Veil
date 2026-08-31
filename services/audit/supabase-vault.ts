@@ -4,7 +4,7 @@ import { keccak256, solidityPackedKeccak256 } from 'ethers';
 import { openSealedBox, seal } from './crypto';
 import { publicView } from './vault';
 import { VaultBackend } from './vault-interface';
-import { AuditorAccount, DisclosureOptions, EvidenceBundle, ProtectedData, PublicTxView, SealedBox, TransactionInput, TransactionRecord } from './types';
+import { AuditorAccount, DisclosureOptions, EvidenceBundle, ProtectedData, PublicTxView, SettlementPreimage, SealedBox, TransactionInput, TransactionRecord } from './types';
 
 type VaultTransactionRow = {
   tx_id: string;
@@ -124,6 +124,19 @@ export class SupabaseVault implements VaultBackend {
   async publicView(txId: string): Promise<PublicTxView | undefined> {
     const rec = await this.get(txId);
     return rec ? publicView(rec) : undefined;
+  }
+
+  async settlementPreimage(txId: string): Promise<SettlementPreimage | undefined> {
+    const rec = await this.get(txId);
+    if (!rec) return undefined;
+    const plaintext = openSealedBox(this.masterKey, txId, rec.protected);
+    const data = JSON.parse(plaintext) as ProtectedData;
+    return {
+      salt: data.salt ?? '0x' + '0'.repeat(64),
+      provider: data.provider,
+      amount: data.amountAtoms,
+      serviceId: data.authorization.serviceId,
+    };
   }
 
   get keySourceLabel(): string {

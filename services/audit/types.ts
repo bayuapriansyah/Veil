@@ -90,6 +90,10 @@ export interface ProtectedData {
   fulfillmentEvidence: EvidenceBundle['fulfillment'];
   attestationEvidence: EvidenceBundle['attestation'];
   settlementEvidence: EvidenceBundle['settlement'];
+  /** Commitment salt — used by operator to verify commitment at settlement time. */
+  salt: string;
+  /** On-chain commitment hash (keccak256 of provider+amount+serviceId+salt). */
+  commitment: string;
 }
 
 /** Input to `Vault.recordTransaction`. */
@@ -159,4 +163,11 @@ export interface AuditAccessRequest {
   nonce: string; // uint256 hex
   expiresAt: number; // unix seconds
   signature: string;
+}
+
+export interface SettlementPreimage {
+  salt: string;
+  provider: string;
+  amount: string;
+  serviceId: string;
 }
