@@ -118,12 +118,12 @@ export class SupabaseVault implements VaultBackend {
   async list(): Promise<PublicTxView[]> {
     const { data, error } = await this.supabase.from('vault_transactions').select('*').order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
-    return ((data ?? []) as VaultTransactionRow[]).map((row) => publicView(rowToRecord(row)));
+    return ((data ?? []) as VaultTransactionRow[]).map((row) => publicView(rowToRecord(row), this.masterKey));
   }
 
   async publicView(txId: string): Promise<PublicTxView | undefined> {
     const rec = await this.get(txId);
-    return rec ? publicView(rec) : undefined;
+    return rec ? publicView(rec, this.masterKey) : undefined;
   }
 
   async settlementPreimage(txId: string): Promise<SettlementPreimage | undefined> {

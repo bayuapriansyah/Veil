@@ -98,30 +98,32 @@ function txTable(doc: jsPDF, y: number, txs: AuditTx[]): number {
 
   const rows = txs.map(t => [
     txShort(t.txId),
-    t.verificationStatus,
+    t.serviceLabel ?? '—',
+    t.amountUsd ? `$${t.amountUsd}` : '—',
+    t.provider ? `${t.provider.slice(0, 6)}…${t.provider.slice(-4)}` : '—',
     t.settlementStatus,
     t.attestationStatus.toUpperCase(),
     t.sourceTx ? txShort(t.sourceTx) : 'not recorded',
-    t.attestationTx ? txShort(t.attestationTx) : 'pending',
     formatDate(t.createdAt),
   ]);
 
   autoTable(doc, {
     startY: y,
-    head: [['Order', 'Verification', 'Settlement', 'Attestation', 'Source', 'CC3', 'Time']],
+    head: [['Order', 'Service', 'Amount', 'Provider', 'Settlement', 'Attestation', 'Source', 'Time']],
     body: rows,
     theme: 'grid',
     styles: { fontSize: 7, cellPadding: 2.5, textColor: [40, 40, 40], lineColor: [220, 220, 220], lineWidth: 0.3 },
     headStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 7, lineColor: [200, 200, 200] },
     alternateRowStyles: { fillColor: [250, 250, 250] },
     columnStyles: {
-      0: { cellWidth: 20 },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 22 },
-      3: { cellWidth: 25 },
-      4: { cellWidth: 22 },
+      0: { cellWidth: 18 },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 16 },
+      3: { cellWidth: 22 },
+      4: { cellWidth: 18 },
       5: { cellWidth: 22 },
-      6: { cellWidth: 40 },
+      6: { cellWidth: 22 },
+      7: { cellWidth: 32 },
     },
     margin: { left: 20, right: 20 },
   });
@@ -176,6 +178,99 @@ function explorerLinks(doc: jsPDF, y: number, txs: AuditTx[]): number {
   });
 
   return y + lines.length * 5 + 8;
+}
+
+function plainEnglishSummary(doc: jsPDF, y: number, txs: AuditTx[]): number {
+  const w = doc.internal.pageSize.getWidth();
+
+  if (y > 230) { doc.addPage(); y = 25; }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text('PLAIN ENGLISH SUMMARY', 20, y);
+  y += 2;
+
+  doc.setDrawColor(200, 200, 200);
+  doc.line(20, y, w - 20, y);
+  y += 6;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(60, 60, 60);
+
+  txs.forEach((t, i) => {
+    if (y > 265) { doc.addPage(); y = 25; }
+
+    const paid = t.verificationStatus.includes('payment-verified');
+    const delivered = t.verificationStatus.includes('fulfillment-verified');
+    const attested = t.attestationStatus === 'verified';
+    const settled = t.settlementStatus === 'settled' || t.settlementStatus === 'released';
+    const zkOk = t.zkReceiptStatus === 'verified';
+
+    const status = paid && delivered && attested && settled
+      ? 'Paid, delivered, attested, and settled.'
+      : paid && delivered
+        ? 'Paid and delivered. Attestation pending.'
+        : paid
+          ? 'Paid. Delivery pending.'
+          : 'Pending.';
+
+    const service = t.serviceLabel ?? 'data service';
+    const amount = t.amountUsd ? ` for $${t.amountUsd}` : '';
+    const provider = t.provider ? ` from ${t.provider.slice(0, 6)}…${t.provider.slice(-4)}` : '';
+
+    const line = `Order ${txShort(t.txId)}: Purchased ${service}${provider}${amount}. ${status}`;
+    doc.text(line, 20, y);
+    y += 5;
+
+    if (zkOk) {
+      doc.text(`  ZK cryptographic receipt verified.`, 20, y);
+      y += 5;
+    }
+  });
+
+  return y + 4;
+}
+
+function explainer(doc: jsPDF, y: number): number {
+  const w = doc.internal.pageSize.getWidth();
+
+  if (y > 220) { doc.addPage(); y = 25; }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text('WHAT THIS MEANS', 20, y);
+  y += 2;
+
+  doc.setDrawColor(200, 200, 200);
+  doc.line(20, y, w - 20, y);
+  y += 6;
+
+  const items = [
+    ['Payment', 'Each order was paid on Ethereum Sepolia. The transaction is public and independently verifiable.'],
+    ['Fulfillment', 'The provider delivered the data. Fulfillment is recorded on-chain by the provider.'],
+    ['Attestation', 'A cryptographic proof was submitted to Creditcoin CC3, linking the Sepolia payment to the Creditcoin settlement chain.'],
+    ['ZK Receipt', 'A zero-knowledge proof confirms the data was received without revealing the data itself.'],
+    ['Settlement', 'Escrow was released to the provider via smart contract on Creditcoin. No human intervention.'],
+    ['Privacy', 'Sensitive details (amounts, agents, evidence) are sealed with AES-256-GCM encryption. Only authorized auditors can decrypt.'],
+  ];
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(60, 60, 60);
+
+  items.forEach(([label, desc], i) => {
+    if (y + i * 10 > 265) { doc.addPage(); y = 25; }
+    doc.setFont('helvetica', 'bold');
+    doc.text(label, 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(desc, 50, y);
+    y += 10;
+  });
+
+  return y + 4;
 }
 
 function boundary(doc: jsPDF, y: number): number {
@@ -234,7 +329,9 @@ export async function generateAuditPDF(txs: AuditTx[]): Promise<void> {
   let y = header(doc, txs.length, formatNow());
   y = summary(doc, y, txs);
   y = txTable(doc, y, txs);
+  y = plainEnglishSummary(doc, y, txs);
   y = explorerLinks(doc, y, txs);
+  y = explainer(doc, y);
   y = boundary(doc, y);
 
   const total = doc.internal.getNumberOfPages();

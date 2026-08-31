@@ -40,6 +40,12 @@ export interface PublicTxView {
   zkProofHash?: string;
   /** ZK receipt verification status on Creditcoin. */
   zkReceiptStatus?: 'none' | 'proving' | 'verified';
+  /** Provider address (public on-chain via FulfillmentReceipt). */
+  provider?: string;
+  /** Dollar amount (derived from atoms, non-sensitive). */
+  amountUsd?: string;
+  /** Human-readable service label. */
+  serviceLabel?: string;
 }
 
 /** Evidence collected across the VEIL stack (kept encrypted at rest). */

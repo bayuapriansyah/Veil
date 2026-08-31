@@ -12,6 +12,138 @@ interface AuditEnvelope {
   auditors: AuditorView[];
 }
 
+function StatusDot({ ok }: { ok: boolean }): React.ReactElement {
+  return (
+    <span className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${ok ? 'bg-ok' : 'bg-bad'}`} />
+  );
+}
+
+function DisclosureCard({ data }: { data: Record<string, unknown> | undefined }): React.ReactElement {
+  if (!data) return <p className="text-mut">No data</p>;
+
+  const d = data as Record<string, unknown>;
+  const payment = d.paymentEvidence as Record<string, unknown> | undefined;
+  const fulfillment = d.fulfillmentEvidence as Record<string, unknown> | undefined;
+  const attestation = d.attestationEvidence as Record<string, unknown> | undefined;
+  const settlement = d.settlementEvidence as Record<string, unknown> | undefined;
+  const auth = d.authorization as Record<string, unknown> | undefined;
+
+  return (
+    <div className="space-y-3 text-ink">
+      <div className="font-medium">Order Details</div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
+        <span className="text-mut">Service</span>
+        <span>{String(d.serviceLabel ?? d.serviceId ?? '—')}</span>
+        <span className="text-mut">Provider</span>
+        <span className="font-mono">{String(d.provider ?? '—')}</span>
+        <span className="text-mut">Amount</span>
+        <span>${String(d.amountUsd ?? '—')}</span>
+        <span className="text-mut">Agent</span>
+        <span className="font-mono text-[11px]">{String(d.agent ?? '—')}</span>
+      </div>
+
+      {auth && (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
+          <span className="text-mut">Mandate ID</span>
+          <span>{String(auth.mandateId ?? '—')}</span>
+          <span className="text-mut">Expires</span>
+          <span>{auth.expiresAt ? new Date(Number(auth.expiresAt) * 1000).toLocaleDateString() : '—'}</span>
+        </div>
+      )}
+
+      <div className="border-t border-line pt-2 font-medium">Verification Pipeline</div>
+      <div className="space-y-1.5 text-[12px]">
+        <div className="flex items-center gap-2">
+          <StatusDot ok={!!payment?.paymentVerified} />
+          <span>Payment {payment?.paymentVerified ? 'verified' : 'pending'}</span>
+          <span className="text-mut text-[11px]">({String(payment?.scheme ?? '—')})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusDot ok={!!fulfillment?.fulfillmentVerified} />
+          <span>Fulfillment {fulfillment?.fulfillmentVerified ? 'delivered' : 'pending'}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusDot ok={attestation?.verified === true} />
+          <span>Attestation {attestation?.verified ? 'proven on Creditcoin' : 'proving'}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusDot ok={settlement?.escrowStatus === 'Released'} />
+          <span>Escrow {String(settlement?.escrowStatus ?? 'locked')}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AuditTxDetail({ tx }: { tx: AuditTx }): React.ReactElement {
+  return (
+    <div className="rounded-lg border border-line bg-panel2/50 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="font-medium text-ink">{tx.txId}</span>
+        <span className="text-[11px] text-mut">{timeAgo(tx.createdAt)}</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 text-[12px]">
+        <div>
+          <div className="text-mut text-[10px] uppercase tracking-wider">Service</div>
+          <div className="text-ink">{tx.serviceLabel ?? '—'}</div>
+        </div>
+        <div>
+          <div className="text-mut text-[10px] uppercase tracking-wider">Provider</div>
+          <div className="font-mono text-ink">{tx.provider ? shortAddress(tx.provider, 6) : '—'}</div>
+        </div>
+        <div>
+          <div className="text-mut text-[10px] uppercase tracking-wider">Amount</div>
+          <div className="text-ink">{tx.amountUsd ? `$${tx.amountUsd}` : '—'}</div>
+        </div>
+      </div>
+
+      <div className="border-t border-line pt-2 space-y-1.5 text-[12px]">
+        <div className="flex items-center gap-2">
+          <StatusDot ok={tx.verificationStatus.includes('payment-verified')} />
+          <span>Payment {tx.verificationStatus.includes('payment-verified') ? 'verified' : 'pending'}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusDot ok={tx.verificationStatus.includes('fulfillment-verified')} />
+          <span>Fulfillment {tx.verificationStatus.includes('fulfillment-verified') ? 'delivered' : 'pending'}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusDot ok={tx.attestationStatus === 'verified'} />
+          <span>Attestation {tx.attestationStatus === 'verified' ? 'proven on Creditcoin' : tx.attestationStatus}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusDot ok={tx.settlementStatus === 'settled' || tx.settlementStatus === 'released'} />
+          <span>Settlement {tx.settlementStatus}</span>
+        </div>
+        {tx.zkProofHash && (
+          <div className="flex items-center gap-2">
+            <StatusDot ok={tx.zkReceiptStatus === 'verified'} />
+            <span>ZK Receipt {tx.zkReceiptStatus === 'verified' ? 'verified' : tx.zkReceiptStatus}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-line pt-2 flex flex-wrap gap-3 text-[11px]">
+        {tx.sourceTx && (
+          <a className="text-mut underline decoration-line/60 hover:text-ok" href={`https://sepolia.etherscan.io/tx/${tx.sourceTx}`} target="_blank" rel="noreferrer">
+            Source tx ↗
+          </a>
+        )}
+        {tx.attestationTx && (
+          <a className="text-mut underline decoration-line/60 hover:text-ok" href={`https://creditcoin-testnet.blockscout.com/tx/${tx.attestationTx}`} target="_blank" rel="noreferrer">
+            Attestation tx ↗
+          </a>
+        )}
+        {tx.settlementTx && (
+          <a className="text-mut underline decoration-line/60 hover:text-ok" href={`https://creditcoin-testnet.blockscout.com/tx/${tx.settlementTx}`} target="_blank" rel="noreferrer">
+            Settlement tx ↗
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AuditConsole(): React.ReactElement {
   const [txs, setTxs] = useState<AuditTx[]>([]);
   const [auditors, setAuditors] = useState<AuditorView[]>([]);
@@ -231,6 +363,11 @@ export function AuditConsole(): React.ReactElement {
           </div>
         )}
 
+        {selected && (() => {
+          const tx = txs.find((t) => t.txId === selected);
+          return tx ? <AuditTxDetail tx={tx} /> : null;
+        })()}
+
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
             <div className="text-xs font-medium uppercase tracking-wider text-mut">Selected transaction</div>
@@ -269,9 +406,13 @@ export function AuditConsole(): React.ReactElement {
               </p>
             )}
             {disclosure && (
-              <pre className="max-h-60 overflow-auto rounded-lg border border-line bg-panel2 p-4 font-mono text-[12px] leading-relaxed text-ok">
-                {JSON.stringify(disclosure.data ?? { error: disclosure.error }, null, 2)}
-              </pre>
+              <div className="max-h-60 overflow-auto rounded-lg border border-line bg-panel2 p-4 text-[12px] leading-relaxed">
+                {disclosure.error ? (
+                  <p className="text-bad">{disclosure.error}</p>
+                ) : (
+                  <DisclosureCard data={disclosure.data} />
+                )}
+              </div>
             )}
             {goodAttempt && (
               <pre

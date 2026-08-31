@@ -76,6 +76,9 @@ export interface AuditTx {
   mandateId?: string;
   zkProofHash?: string;
   zkReceiptStatus?: 'none' | 'proving' | 'verified';
+  provider?: string;
+  amountUsd?: string;
+  serviceLabel?: string;
 }
 
 export interface VeilState {

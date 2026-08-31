@@ -14,6 +14,19 @@ import {
 } from './types';
 import { VaultBackend } from './vault-interface';
 
+const SERVICE_LABELS: Record<string, string> = {
+  '0xb4a22cf5ba542b9c3cdc7ffac0e910eb54204424b9b6d92d7888a79afadd09c9': 'Market Data',
+};
+
+export function resolveServiceLabel(serviceId: string): string {
+  return SERVICE_LABELS[serviceId] ?? 'Data Service';
+}
+
+export function atomsToUsd(atoms: string | bigint): string {
+  const n = Number(BigInt(atoms)) / 1e18;
+  return n.toFixed(3);
+}
+
 const PUBLIC_FIELDS = ['txId', 'commitment', 'verificationStatus', 'policyStatus', 'settlementStatus', 'createdAt'] as const;
 
 export class AuditVault implements VaultBackend {
@@ -89,12 +102,12 @@ export class AuditVault implements VaultBackend {
   }
 
   async list(): Promise<PublicTxView[]> {
-    return [...this.transactions.values()].map(publicView);
+    return [...this.transactions.values()].map((rec) => publicView(rec, this.masterKey));
   }
 
   async publicView(txId: string): Promise<PublicTxView | undefined> {
     const rec = this.transactions.get(txId);
-    return rec ? publicView(rec) : undefined;
+    return rec ? publicView(rec, this.masterKey) : undefined;
   }
 
   async settlementPreimage(txId: string): Promise<SettlementPreimage | undefined> {
@@ -195,8 +208,8 @@ export class AuditVault implements VaultBackend {
   }
 }
 
-export function publicView(rec: TransactionRecord): PublicTxView {
-  return {
+export function publicView(rec: TransactionRecord, masterKey?: Buffer): PublicTxView {
+  const base: PublicTxView = {
     txId: rec.txId,
     commitment: rec.commitment,
     verificationStatus: rec.verificationStatus,
@@ -213,6 +226,18 @@ export function publicView(rec: TransactionRecord): PublicTxView {
     zkProofHash: rec.zkProofHash,
     zkReceiptStatus: rec.zkReceiptStatus,
   };
+
+  if (masterKey) {
+    try {
+      const plaintext = openSealedBox(masterKey, rec.txId, rec.protected);
+      const data = JSON.parse(plaintext) as ProtectedData;
+      base.provider = data.provider;
+      base.amountUsd = data.amountUsd;
+      base.serviceLabel = resolveServiceLabel(data.authorization.serviceId);
+    } catch { /* sealed box open failed — leave fields undefined */ }
+  }
+
+  return base;
 }
 
 function deriveTxId(commitment: string): string {
